@@ -9,6 +9,7 @@ All submissions are expected to be in a zip file format.
 
 import argparse
 import importlib
+import importlib.util
 import logging
 import pathlib
 import shutil
@@ -62,9 +63,18 @@ class ModuleRunner:
                 if spec is None:
                     logger.warning(f"Could not create spec for {file_path}")
                     continue
+
+                # Load the module
                 module = importlib.util.module_from_spec(spec)
+                if module is None:
+                    logger.warning(f"Could not load module {file_path}")
+                    continue
+                spec.loader.exec_module(module)
+                if module is None:
+                    logger.warning(f"Module {file_path} is None after loading")
+                    continue
                 
-                # Find TestModule classes
+                # Find BaseModule classes
                 for attr_name in dir(module):
                     attr = getattr(module, attr_name)
                     if (
@@ -72,7 +82,7 @@ class ModuleRunner:
                         issubclass(attr, BaseModule) and 
                         attr is not BaseModule
                     ):
-                        self.available_modules[attr_name] = attr
+                        self.modules[attr_name] = attr
                         logger.info(f"Discovered test module: {attr_name}")
             
             except Exception as e:
@@ -211,6 +221,11 @@ def main():
         logger.setLevel(logging.DEBUG)
         logger.debug("Debug mode enabled")
     
+    # If no module path is provided, use the current directory
+    if not args.modules_path:
+        args.modules_path = pathlib.Path.cwd()
+        logger.warning(f"No modules path given. Using current directory: {args.modules_path}")
+
     # Run autograder
     autograder = Autograder(
         config=args.config,
