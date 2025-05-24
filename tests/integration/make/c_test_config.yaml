@@ -1,0 +1,17 @@
+# Test configuration for C language integration tests
+
+# General test settings
+settings:
+  timeout_global: 60
+
+# List test modules in order of execution
+modules:
+  - compilation:
+      class: "CCompilationModule"
+      path: "./c_test_modules.py"
+      description: "Tests for C compilation and linking"
+      required: true
+      points: 20
+      timeout: 30
+      on_failure: "stop"
+

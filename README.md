@@ -1,4 +1,4 @@
-# ByteGrader
+# ByteGrader Autograder Framework
 
 <img src=".images/bytegrader-logo.png" alt="ByteGrader logo" width="200" />
 
@@ -29,6 +29,12 @@ While ByteGrader is optimized for embedded systems and hardware-centric courses,
 ## Quick Start
 
 _Coming soon…_
+
+## Todo
+
+ ☐ Add schema type checking for YAML config files
+ ☐ Set up GitHub actions for continuous testing (start with basic integration tests)
+ ☐ Construct unit tests
 
 ## License
 

@@ -89,4 +89,5 @@ venv/
 .venv
 
 # ByteGrader specifics
-temp_submission/
+unzipped/
+output/
