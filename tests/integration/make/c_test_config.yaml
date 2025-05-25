@@ -12,6 +12,11 @@ modules:
       description: "Tests for C compilation and linking"
       required: true
       points: 20
-      timeout: 30
+      timeout_sec: 30
+      ram_limit_mb: 512
+      file_size_limit_mb: 50
+      num_proc_limit: 100
+      num_open_files_limit: 100
+      on_success: "continue"
       on_failure: "stop"
 

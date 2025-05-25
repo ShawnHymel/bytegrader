@@ -5,6 +5,8 @@ This module implements the `BaseModule` class to provide a custom grading
 logic for C code submissions.
 """
 
+import logging
+from pathlib import Path
 import subprocess
 
 from bytegrader.base_module import BaseModule
@@ -16,13 +18,20 @@ class CCompilationModule(BaseModule):
     submissions.
     """
     
-    def __init__(self, submission_path: str):
+    def __init__(
+        self, 
+        work_path: Path,
+        config: dict = None,
+        logger: logging.Logger = None
+    ):
         """Initialize the C compilation module with a submission path
 
         Args:
-            config (dict): Configuration dictionary for the grading module.
+            work_path (Path): Path to the submission directory.
+            config (dict, optional): Configuration dictionary for the grading module.
+            logger (logging.Logger, optional): Logger instance for logging messages.
         """
-        super().__init__(submission_path)
+        super().__init__(work_path, config, logger)
     
     def run(self):
         """Compile C code submission"""
@@ -31,11 +40,13 @@ class CCompilationModule(BaseModule):
         try:
             result = subprocess.run(
                 ["make"],
-                cwd=self.submission_path,
+                cwd=self.work_path,
                 check=True,
                 capture_output=True,
             )
-            print(result.stdout.decode())
+
         except subprocess.CalledProcessError as e:
             print(f"Compilation failed: {e.stderr.decode()}")
             return False
+        
+        return True
