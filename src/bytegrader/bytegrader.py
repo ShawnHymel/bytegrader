@@ -19,7 +19,8 @@ import shutil
 import yaml
 
 from bytegrader import __version__
-from bytegrader.base_module import BaseModule
+from bytegrader.base_suite import BaseSuite
+from bytegrader.suite_result import SuiteResult
 
 # Settings
 DEFAULT_UNZIP_DIR = "temp_unzip"
@@ -30,44 +31,68 @@ DEFAULT_NUM_PROC_LIMIT = 100
 DEFAULT_NUM_OPEN_FILES_LIMIT = 100
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s]: %(message)s"
-)
-logger = logging.getLogger(__name__)
+logger = logging.getLogger(__package__)
 
-def run_module_process(
-    module_class, 
-    work_path, 
-    module_config, 
-    logger_level,
-    return_dict,
-):
-    """Run a module in a separate process
+################################################################################
+# Module-level functions
+
+def configure_logging(logger_level: int) -> None:
+    """Configure logging for the suite
 
     Args:
-        module_class (BaseModule): The module class to run
-        work_path (str): Path to the unzipped submission directory
-        module_config (dict): Configuration for the module
-        return_dict (multiprocessing.Manager().dict): Dictionary to store the result
-        logger_level (int, optional): Logging level for the module. Defaults to logging.INFO.
+        logger_level (int): Logging level to set
     """
-    try:
-        # Set up logging for the module
-        module_logger = logging.getLogger(module_class.__name__)
-        module_logger.setLevel(logger_level)
+    logging.basicConfig(
+        level=logger_level,
+        format="%(asctime)s %(name)s [%(levelname)s]: %(message)s",
+        force=True,
+        handlers=[logging.StreamHandler()],
+    )
+    logger.setLevel(logger_level)
+    logger.debug(f"Logging configured at level: {logger_level}")
 
-        # Set resource limits for the module
-        timeout_sec = module_config.get("timeout_sec", DEFAULT_TIMEOUT_SEC)
-        ram_limit_mb = module_config.get("ram_limit_mb", DEFAULT_RAM_LIMIT_MB)
-        file_size_limit_mb = module_config.get("file_size_limit_mb", DEFAULT_FILE_SIZE_LIMIT_MB)
-        num_proc_limit = module_config.get("num_proc_limit", DEFAULT_NUM_PROC_LIMIT)
-        num_open_files_limit = module_config.get(
+def run_suite_process(
+    suite_class: BaseSuite, 
+    work_path: str,
+    submission_id: int,
+    suite_config: dict,
+    logger_level: int,
+    return_dict: dict,
+) -> None:
+    """Run a suite in a separate process
+
+    Args:
+        suite_class (BaseSuite): The suite class to run
+        work_path (str): Path to the unzipped submission directory
+        submission_id (int): Unique identifier for the student's submission
+        suite_config (dict): Configuration for the suite
+        logger_level (int): Logging level for the suite. Defaults to logging.INFO.
+        return_dict (dict): Dictionary to store the result of the suite run
+    """
+    feedback = None
+    try:
+        # Set up logging for the suite
+        logging.basicConfig(
+            level=logger_level,
+            format="%(asctime)s %(name)s [%(levelname)s]: %(message)s",
+            force=True,
+            handlers=[logging.StreamHandler()],
+        )
+        suite_logger = logging.getLogger(suite_class.__name__)
+        suite_logger.setLevel(logger_level)
+        
+
+        # Set resource limits for the suite
+        timeout_sec = suite_config.get("timeout_sec", DEFAULT_TIMEOUT_SEC)
+        ram_limit_mb = suite_config.get("ram_limit_mb", DEFAULT_RAM_LIMIT_MB)
+        file_size_limit_mb = suite_config.get("file_size_limit_mb", DEFAULT_FILE_SIZE_LIMIT_MB)
+        num_proc_limit = suite_config.get("num_proc_limit", DEFAULT_NUM_PROC_LIMIT)
+        num_open_files_limit = suite_config.get(
             "num_open_files_limit", 
             DEFAULT_NUM_OPEN_FILES_LIMIT
         )
-        module_logger.debug(
-            f"Setting resource limits for module {module_class.__name__}: "
+        suite_logger.debug(
+            f"Setting resource limits for suite {suite_class.__name__}: "
             f"timeout={timeout_sec}s, ram={ram_limit_mb}MB, "
             f"file_size={file_size_limit_mb}MB, "
             f"num_proc={num_proc_limit}, num_open_files={num_open_files_limit}"
@@ -80,38 +105,58 @@ def run_module_process(
         resource.setrlimit(resource.RLIMIT_NPROC, (num_proc_limit, num_proc_limit))
         resource.setrlimit(resource.RLIMIT_NOFILE, (num_open_files_limit, num_open_files_limit))
 
-        # Instantiate the module class and run it
-        module_instance = module_class(
+        # Instantiate the suite class and run it
+        suite_instance = suite_class(
             work_path=work_path,
-            config=module_config,
-            logger=module_logger,
+            submission_id=submission_id,
+            config=suite_config,
+            logger=suite_logger,
         )
-        result = module_instance.run()
-        return_dict['success'] = True
-        return_dict['result'] = result
+        result = suite_instance.run()
+
+        # Validate that a SuiteResult was returned
+        if not isinstance(suite_instance.result, SuiteResult):
+            raise TypeError(
+                f"Suite {suite_class.__name__} did not return a SuiteResult instance"
+            )
+
+        # Extract data for multiprocessing
+        return_dict['success'] = result.success
+        return_dict['score'] = result.score
+        return_dict['max_score'] = result.max_score
+        return_dict['feedback_messages'] = result.feedback_messages
+        return_dict['error'] = result.error
 
     except Exception as e:
-        module_logger.error(f"Error running module {module_class.__name__}: {e}")
+        suite_logger.error(f"Error running suite {suite_class.__name__}: {e}")
         return_dict['success'] = False
         return_dict['error'] = str(e)
+        return_dict['feedback_messages'] = []
+        return_dict['score'] = 0
+        return_dict['max_score'] = suite_config.get('max_score', 0)
 
-class ModuleRunner:
-    """Discovers, loads, and runs the course-specific grading modules"""
+################################################################################
+# Classes
+
+class SuiteRunner:
+    """Discovers, loads, and runs the course-specific grading suites"""
 
     def __init__(
         self, 
         config: dict, 
         config_dir_path: str, 
-        work_path: str):
-        """Initialize the module runner with the path to the modules
+        work_path: str,
+        submission_id: int = -1,
+    ):
+        """Initialize the suite runner with the path to the suites
 
         Args:
-            config (dict): Configuration dictionary containing module paths and settings
+            config (dict): Configuration dictionary containing suite paths and settings
             config_dir_path (str): Path to the directory containing the configuration file
             work_path (str): Path to the unzipped submission directory
 
         Raises:
-            ValueError: If the config or module path is invalid or not provided
+            ValueError: If the config or suite path is invalid or not provided
         """
 
         # Validate config
@@ -131,122 +176,138 @@ class ModuleRunner:
         if not self._work_path.is_dir():
             raise ValueError(f"Work path is not a directory: {self._work_path}")
 
-        # Load modules
-        self._modules = {}
-        self._load_modules()
+        # Load suites
+        self._suites = {}
+        self._load_suites()
 
-    def _load_modules(self):
-        """Load the course-specific grading module"""
+    def _load_suites(self):
+        """Load the course-specific grading suite"""
         
-        # Create list of complete module paths from config
-        modules = self._config.get("modules", [])
-        if not modules:
-            raise ValueError("No modules specified in configuration")
+        # Create list of complete suite paths from config
+        suites = self._config.get("suites", [])
+        if not suites:
+            raise ValueError("No suites specified in configuration")
         
-        # Load each module specified in the configuration
-        for module in modules:
+        # Load each suite specified in the configuration
+        for suite in suites:
 
-            # Get the module name and config
-            module_name = next(iter(module))
-            module_config = module[module_name]
-            logger.debug(f"Loading module: {module_name}")
+            # Get the suite name and config
+            suite_name = next(iter(suite))
+            suite_config = suite[suite_name]
+            logger.debug(f"Loading suite: ''{suite_name}''")
 
-            # Get absolute path to the module file
-            if pathlib.Path(module_config["path"]).is_absolute():
-                module_path = pathlib.Path(module_config["path"])
+            # Get absolute path to the suite file
+            if pathlib.Path(suite_config["path"]).is_absolute():
+                suite_path = pathlib.Path(suite_config["path"])
             else:
-                module_path = self._config_dir_path / module_config["path"]
-            module_path = module_path.resolve()
-            logger.debug(f"Module path: {module_path}")
+                suite_path = self._config_dir_path / suite_config["path"]
+            suite_path = suite_path.resolve()
+            logger.debug(f"Suite path: {suite_path}")
             
             try:
-                # Import module from file
+                # Import suite from file
                 spec = importlib.util.spec_from_file_location(
-                    module_name, 
-                    module_path,
+                    suite_name, 
+                    suite_path,
                 )
                 if spec is None:
-                    logger.warning(f"Could not create spec for {module_path}")
+                    logger.warning(f"Could not create spec for {suite_path}")
                     continue
 
-                # Load the module
-                module = importlib.util.module_from_spec(spec)
-                if module is None:
-                    logger.warning(f"Could not load module {module_path}")
+                # Load the suite
+                suite = importlib.util.module_from_spec(spec)
+                if suite is None:
+                    logger.warning(f"Could not load suite {suite_path}")
                     continue
-                spec.loader.exec_module(module)
-                if module is None:
-                    logger.warning(f"Module {module_path} is None after loading")
+                spec.loader.exec_module(suite)
+                if suite is None:
+                    logger.warning(f"Suite {suite_path} is None after loading")
                     continue
                 
-                # Find BaseModule class that matches the "class" key in the config
-                if "class" in module_config:
-                    class_name = module_config["class"]
-                    if hasattr(module, class_name):
-                        module_class = getattr(module, class_name)
-                        if isinstance(module_class, type) and issubclass(module_class, BaseModule):
-                            self._modules[module_name] = module_class
-                            logger.info(f"Discovered test module: {class_name}")
+                # Find BaseSuite class that matches the "class" key in the config
+                if "class" in suite_config:
+                    class_name = suite_config["class"]
+                    logger.debug(f"Looking for class {class_name} in suite {suite_path}")
+                    if hasattr(suite, class_name):
+                        suite_class = getattr(suite, class_name)
+                        if isinstance(suite_class, type) and issubclass(suite_class, BaseSuite):
+                            self._suites[suite_name] = suite_class
+                            logger.info(f"Discovered test suite: {class_name}")
                         else:
                             logger.error(
-                                f"{class_name} is not a valid BaseModule subclass in {module_path}"
+                                f"{class_name} is not a valid BaseSuite subclass in {suite_path}"
                             )
                             continue
                     else:
-                        logger.error(f"{class_name} not found in module {module_path}")
+                        logger.error(f"{class_name} not found in suite {suite_path}")
                         continue
             
             except Exception as e:
-                logger.error(f"Failed to load module {module_path}: {e}")
+                logger.error(f"Failed to load suite {suite_path}: {e}")
                 continue
         
-        # Log loaded modules
-        logger.info(f"Loaded {len(self._modules)} modules")
-        logger.debug(f"Available modules: {list(self._modules.keys())}")
-        if not self._modules:
-            logger.warning("No modules loaded")
+        # Log loaded suites
+        logger.info(f"Loaded {len(self._suites)} suites")
+        logger.debug(f"Available suites: {list(self._suites.keys())}")
+        if not self._suites:
+            logger.warning("No suites loaded")
 
-    def run_module(self, module_name: str, module_config: dict = None):
-        """Run a specific module with the given submission path
+    def run_suite(
+        self, 
+        suite_name: str,
+        submission_id: int,
+        suite_config: dict = None, 
+    ) -> SuiteResult:
+        """Run a specific suite with the given submission path
 
         Args:
-            module_name (str): Name of the module to run
-            module_config (dict, optional): Configuration for the module.
+            suite_name (str): Name of the suite to run
+            submission_id (int): Unique identifier for the student's submission
+            suite_config (dict, optional): Configuration for the suite.
 
         Returns:
-            result: Result of the module's run method
+            result: Result of the suite's run method
         """
 
-        # Validate module name
-        if module_name not in self._modules:
-            raise ValueError(f"Module {module_name} not found")
+        # Validate suite name
+        if suite_name not in self._suites:
+            raise ValueError(f"Suite '{suite_name}' not found")
         
-        # Validate module configuration
-        if module_config is None:
-            module_config = self._config.get("default_module_config", {})
-        if not module_config:
-            raise ValueError(f"No configuration provided for module {module_name}")
+        # Validate suite configuration
+        if suite_config is None:
+            suite_config = self._config.get("default_suite_config", {})
+        if not suite_config:
+            raise ValueError(f"No configuration provided for suite '{suite_name}'")
         
         # Get timeout
-        timeout_sec = module_config.get("timeout_sec", DEFAULT_TIMEOUT_SEC)
+        timeout_sec = suite_config.get("timeout_sec", DEFAULT_TIMEOUT_SEC)
         if timeout_sec <= 0:
-            raise ValueError(f"Invalid timeout for module {module_name}: {timeout_sec} seconds")
+            raise ValueError(f"Invalid timeout for suite '{suite_name}': {timeout_sec} seconds")
         
-        try:
-            # Get the module class
-            module_class = self._modules[module_name]
-            
-            # Set up multiprocessing to run the module
-            manager = multiprocessing.Manager()
-            return_dict = manager.dict()
+        # Initialize the result
+        result = SuiteResult(
+            success=False,
+            score=0.0,
+            max_score=suite_config.get("max_score", 0.0),
+            feedback_messages=[],
+            error=None,
+        )
 
-            # Create a new process for the module
+        try:
+            # Get the suite class
+            suite_class = self._suites[suite_name]
+
+            # Create a dictionary to store the result of the suite run
+            return_dict = multiprocessing.Manager().dict()
+
+            # Create a new process for the suite
             process = multiprocessing.Process(
-                target=run_module_process,
+                target=run_suite_process,
                 args=(
-                    module_class, 
-                    self._work_path, 
-                    module_config, 
+                    suite_class, 
+                    self._work_path,
+                    submission_id,
+                    suite_config, 
                     logger.level,
                     return_dict,
                 )
@@ -256,27 +317,39 @@ class ModuleRunner:
             process.start()
             process.join(timeout=timeout_sec)
             if process.is_alive():
-                logger.warning(f"Module {module_name} timed out after {timeout_sec} seconds")
+                logger.warning(f"Suite '{suite_name}' timed out after {timeout_sec} seconds")
                 process.terminate()
                 return None
             
             # Check exit code
             if process.exitcode != 0:
-                logger.error(f"Module {module_name} exited with code {process.exitcode}")
+                logger.error(f"Suite '{suite_name}' exited with code {process.exitcode}")
                 return None
-            
-            # Check if the process completed successfully
-            if return_dict.get('success'):
-                result = return_dict.get('result')
-                logger.debug(f"Module {module_name} succeeded with result: {result}")
-            else:
-                logger.error(f"Module {module_name} failed with error: {return_dict.get('error')}")
-                result = None
 
         except Exception as e:
-            logger.error(f"Error running module {module_name}: {e}")
+            logger.error(f"Error running suite '{suite_name}': {e}")
             return None
         
+        # Extract the result from the return dictionary
+        result.success = return_dict['success']
+        result.score = return_dict.get('score', 0.0)
+        result.max_score = return_dict.get('max_score', 0.0)
+        result.feedback_messages = return_dict.get('feedback_messages', [])
+        result.error = return_dict.get('error', None)
+
+        # Log the result
+        logger.debug(f"Suite '{suite_name}' result: {result}")
+        if result.success:
+            logger.info(
+                f"Suite '{suite_name}' for ID {submission_id} completed with "
+                f"score {result.score}/{result.max_score}"
+            )
+        else:
+            logger.error(
+                f"Suite '{suite_name}' for ID {submission_id} failed with error: "
+                f"{result.error or 'Unknown error'}"
+            )
+
         return result
 
 class Autograder:
@@ -290,15 +363,17 @@ class Autograder:
             self, 
             submission: str,
             config_path: str,
-            output: str = "./",
+            submission_id: int = -1,
+            output_path: str = "./",
             work_path: str = "./",
         ):
-        """Initialize the autograder with optional configuration and module paths
+        """Initialize the autograder with optional configuration and suite paths
 
         Args:
             submission (str): Path to the submission zip file
             config_path (str): Path to the configuration file (YAML format)
-            output (str, optional): Path to output directory for results. 
+            submission_id (int, optional): Unique identifier for the student's submission.
+            output_path (str, optional): Path to output directory for results. 
                 Defaults to current directory.
             work_path (str, optional): Path to the directory where the 
                 submission is unzipped and compiled. Defaults to current directory.
@@ -306,18 +381,19 @@ class Autograder:
 
         # Set attributes from arguments
         self._config_path = pathlib.Path(config_path).resolve()
-        self._output = output
+        self._output_path = output_path
         self._submission = submission
         self._work_path = work_path
+        self._submission_id = submission_id
 
         # Load configuration
         self._config = self._load_config()
         if not self._config:
             raise ValueError("Configuration could not be loaded")
-        logging.debug(f"Configuration loaded: {self._config}")
+        logger.debug(f"Configuration loaded: {self._config}")
 
         # Create runner
-        self._module_runner = ModuleRunner(
+        self._suite_runner = SuiteRunner(
             self._config, 
             self._config_path.parent, 
             self._work_path
@@ -325,31 +401,41 @@ class Autograder:
 
     def grade(self):
         """Run the grading process"""
-        logging.info("Starting grading process")
+        logger.info("Starting grading process")
 
         # Copy and extract submission
         try:
             grading_path = self._copy_and_extract_submission()
-            logging.info(f"Submission extracted to {grading_path}")
+            logger.info(f"Submission extracted to {grading_path}")
         except Exception as e:
-            logging.error(f"Failed to extract submission: {e}")
+            logger.error(f"Failed to extract submission: {e}")
             return
         
-        # Run each module specified in the configuration
-        for module in self._config.get("modules", []):
-            module_name = next(iter(module))
-            module_config = module[module_name]
-            logging.info(f"Running module: {module_name}")
-            logging.debug(f"Module config: {module_config}")
+        # Run each suite specified in the configuration
+        for suite in self._config.get("suites", []):
+            suite_name = next(iter(suite))
+            suite_config = suite[suite_name]
+            logger.info(f"Running suite: '{suite_name}'")
+            logger.debug(f"Suite '{suite_name}' config: {suite_config}")
             try:
-                result = self._module_runner.run_module(module_name, module_config)
-                if result is not None:
-                    logging.info(f"Module {module_name} completed successfully")
-                else:
-                    logging.error(f"Module {module_name} failed")
+                result = self._suite_runner.run_suite(
+                    suite_name, 
+                    self._submission_id,
+                    suite_config,
+                )
             except Exception as e:
-                logging.error(f"Error running module {module_name}: {e}")
+                logger.error(f"Error running suite '{suite_name}': {e}")
                 continue
+
+            # Handle the result of the suite run
+            if result is None:
+                logger.error(f"Suite '{suite_name}' did not return a valid result")
+                continue
+
+            # TODO:
+            # - Update total score based on the suite result
+            # - Update log of feedback messages
+
         
     def _load_config(self):
         """Load the autograder configuration from a YAML file
@@ -399,6 +485,9 @@ class Autograder:
 
         return temp_dir
 
+################################################################################
+# Main entry point
+
 def main():
     """Main entry point"""
 
@@ -418,7 +507,14 @@ def main():
         help="Enable debug logging",
     )
     parser.add_argument(
-        "--output",
+        "--id",
+        "-i",
+        type=int,
+        default=-1,
+        help="Unique identifier for the student's submission (default: -1)",
+    )
+    parser.add_argument(
+        "--output_dir",
         "-o",
         required=True,
         type=str,
@@ -441,24 +537,21 @@ def main():
     # Parse arguments
     args = parser.parse_args()
 
-    # Print welcome message
-    logger.info(f"ByteGrader Autograder Framework v{__version__}")
-
     # If debug mode is enabled, set logging to DEBUG level
     if args.debug:
-        logging.getLogger().setLevel(logging.DEBUG)
-        logging.basicConfig(
-            level=logging.DEBUG, 
-            force=True,
-            format="%(asctime)s [%(levelname)s]: %(message)s"
-        )
-        logger.debug("Debug mode enabled")
+        configure_logging(logging.DEBUG)
+    else:
+        configure_logging(logging.INFO)
+
+    # Print welcome message
+    logger.info(f"ByteGrader Autograder Framework v{__version__}")
 
     # Run autograder
     autograder = Autograder(
         config_path=args.config,
-        output=args.output,
         submission=args.submission,
+        submission_id=args.id,
+        output_path=args.output_dir,
         work_path=args.work_dir,
     )
     autograder.grade()

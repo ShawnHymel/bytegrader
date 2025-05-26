@@ -15,7 +15,6 @@ While ByteGrader is optimized for embedded systems and hardware-centric courses,
 
 - **Language-agnostic grading engine** (Python, C, etc.)
 - **Docker-based execution** to isolate and reproduce environments
-- **Support for unit tests, integration tests, and static checks**
 - **Pluggable modules** for different courses or assignments
 - **Code analysis tools** to verify API usage, function calls, or design patterns
 
@@ -32,9 +31,14 @@ _Coming soon…_
 
 ## Todo
 
- ☐ Add schema type checking for YAML config files
- ☐ Set up GitHub actions for continuous testing (start with basic integration tests)
- ☐ Construct unit tests
+ * Add run/stop based on test fail and config settings
+ * Total score and log all feedback messages to file(s) in output directory
+ * Create tests: bad code (does not compile), malicious code (forever loop)
+ * Add pattern checking (i.e. did student call a particular function)
+ * Dockerize stuff
+ * Add schema type checking for YAML config files
+ * Set up GitHub actions for continuous testing (start with basic integration tests)
+ * Construct unit tests
 
 ## License
 
