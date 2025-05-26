@@ -146,6 +146,6 @@ class RunSuite(BaseSuite):
         if score == 20:
             self.result.add_feedback("All tests passed successfully.")
         else:
-            self.result.add_feedback(f"Some tests failed. Total score: {score}/20")
+            self.result.add_feedback(f"Some tests failed.")
 
         return self.result

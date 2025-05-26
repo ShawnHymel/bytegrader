@@ -1,13 +1,9 @@
-# Test configuration for C language integration tests
-
-# General test settings
-# settings:
-#   timeout_global: 60
+# Test configuration for malicious C language integration tests
 
 # List test suites in order of execution
 suites:
   - compilation:
-      path: "./make_test_suites.py"
+      path: "./suites.py"
       class: "CompileSuite"
       description: "Tests for C compilation and linking"
       max_score: 20
@@ -16,16 +12,17 @@ suites:
       file_size_limit_mb: 50
       num_proc_limit: 100
       num_open_files_limit: 100
-      on_failure: "stop"
+      stop_on_failure: true
 
   - run:
-      path: "./make_test_suites.py"
+      skip: false
+      path: "./suites.py"
       class: "RunSuite"
       description: "Tests for running C program"
       max_score: 20
-      timeout_sec: 30
+      timeout_sec: 3
       ram_limit_mb: 512
       file_size_limit_mb: 50
       num_proc_limit: 100
       num_open_files_limit: 100
-      on_failure: "stop"
+      stop_on_failure: true

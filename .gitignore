@@ -92,3 +92,4 @@ venv/
 unzipped/
 workdir/
 output/
+output.txt

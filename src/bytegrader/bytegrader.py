@@ -8,6 +8,7 @@ All submissions are expected to be in a zip file format.
 """
 
 import argparse
+from datetime import datetime
 import importlib
 import importlib.util
 import logging
@@ -24,6 +25,8 @@ from bytegrader.suite_result import SuiteResult
 
 # Settings
 DEFAULT_UNZIP_DIR = "temp_unzip"
+DEFAULT_SKIP = False
+DEFAULT_STOP_ON_FAILURE = False
 DEFAULT_TIMEOUT_SEC = 30
 DEFAULT_RAM_LIMIT_MB = 512
 DEFAULT_FILE_SIZE_LIMIT_MB = 50
@@ -146,7 +149,7 @@ class SuiteRunner:
         config: dict, 
         config_dir_path: str, 
         work_path: str,
-        submission_id: int = -1,
+        submission_id: int,
     ):
         """Initialize the suite runner with the path to the suites
 
@@ -154,6 +157,7 @@ class SuiteRunner:
             config (dict): Configuration dictionary containing suite paths and settings
             config_dir_path (str): Path to the directory containing the configuration file
             work_path (str): Path to the unzipped submission directory
+            submission_id (int): Unique identifier for the student's submission
 
         Raises:
             ValueError: If the config or suite path is invalid or not provided
@@ -173,12 +177,130 @@ class SuiteRunner:
         if not work_path:
             raise ValueError("Submission path is required")
         self._work_path = pathlib.Path(work_path).resolve()
-        if not self._work_path.is_dir():
-            raise ValueError(f"Work path is not a directory: {self._work_path}")
+        logger.debug(f"Work path resolved to: {self._work_path}")
 
         # Load suites
         self._suites = {}
+        self._suite_names = []
+        self._submission_id = submission_id
         self._load_suites()
+
+    @property
+    def suite_names(self):
+        """Get the loaded suite names
+        Returns:
+            list: List of suite names that have been loaded
+        """
+        return self._suite_names
+    
+    def get_suite_config(self, suite_name: str) -> dict:
+        """Get the configuration for a specific suite
+
+        Args:
+            suite_name (str): Name of the suite to get the configuration for
+
+        Returns:
+            dict: Configuration dictionary for the specified suite
+        """
+        if suite_name not in self._suites:
+            raise ValueError(f"Suite '{suite_name}' not found")
+        return self._suites[suite_name].get('config', {})
+
+    def run_suite(
+        self, 
+        suite_name: str
+    ) -> SuiteResult:
+        """Run a specific suite with the given submission path
+
+        Args:
+            suite_name (str): Name of the suite to run
+
+        Returns:
+            result: Result of the suite's run method
+        """
+
+        # Validate suite name
+        if suite_name not in self._suites:
+            raise ValueError(f"Suite '{suite_name}' not found")
+        
+        # Get the suite configuration
+        suite_config = self._suites[suite_name].get('config', {})
+        if not suite_config:
+            raise ValueError(f"Configuration for suite '{suite_name}' is missing or invalid")
+        
+        # Get timeout
+        timeout_sec = suite_config.get("timeout_sec", DEFAULT_TIMEOUT_SEC)
+        if timeout_sec <= 0:
+            raise ValueError(f"Invalid timeout for suite '{suite_name}': {timeout_sec} seconds")
+        
+        # Initialize the result
+        result = SuiteResult(
+            success=False,
+            score=0.0,
+            max_score=suite_config.get("max_score", 0.0),
+            feedback_messages=[],
+            error=None,
+        )
+
+        try:
+            # Get the suite class
+            suite_class = self._suites[suite_name]['class']
+
+            # Create a dictionary to store the result of the suite run
+            return_dict = multiprocessing.Manager().dict()
+
+            # Create a new process for the suite
+            process = multiprocessing.Process(
+                target=run_suite_process,
+                args=(
+                    suite_class, 
+                    self._work_path,
+                    self._submission_id,
+                    suite_config, 
+                    logger.level,
+                    return_dict,
+                )
+            )
+
+            # Start the process
+            process.start()
+            process.join(timeout=timeout_sec)
+            if process.is_alive():
+                logger.warning(f"Suite '{suite_name}' timed out after {timeout_sec} seconds")
+                process.terminate()
+                result.success = False
+                result.error = f"Suite '{suite_name}' timed out after {timeout_sec} seconds"
+                return result
+            
+            # Check exit code
+            if process.exitcode != 0:
+                logger.error(f"Suite '{suite_name}' exited with code {process.exitcode}")
+                result.success = False
+                result.error = f"Suite '{suite_name}' exited with code {process.exitcode}"
+                return result
+
+        except Exception as e:
+            logger.error(f"Error running suite '{suite_name}': {e}")
+            return None
+        
+        # Extract the result from the return dictionary
+        result.success = return_dict['success']
+        result.score = return_dict.get('score', 0.0)
+        result.max_score = return_dict.get('max_score', 0.0)
+        result.feedback_messages = return_dict.get('feedback_messages', [])
+        result.error = return_dict.get('error', None)
+
+        # Log the result
+        logger.debug(f"Suite '{suite_name}' result: {result}")
+        if result.success:
+            logger.info(
+                f"Suite '{suite_name}' for ID {self._submission_id} completed with "
+                f"score {result.score}/{result.max_score}"
+            )
+        else:
+            logger.error(f"Suite '{suite_name}' for ID {self._submission_id} failed.")
+
+        return result
 
     def _load_suites(self):
         """Load the course-specific grading suite"""
@@ -194,6 +316,9 @@ class SuiteRunner:
             # Get the suite name and config
             suite_name = next(iter(suite))
             suite_config = suite[suite_name]
+            if suite.get("skip", DEFAULT_SKIP):
+                logger.info(f"Skipping suite: {suite_name}")
+                continue
             logger.debug(f"Loading suite: ''{suite_name}''")
 
             # Get absolute path to the suite file
@@ -225,13 +350,14 @@ class SuiteRunner:
                     continue
                 
                 # Find BaseSuite class that matches the "class" key in the config
-                if "class" in suite_config:
-                    class_name = suite_config["class"]
+                if 'class' in suite_config:
+                    class_name = suite_config['class']
                     logger.debug(f"Looking for class {class_name} in suite {suite_path}")
                     if hasattr(suite, class_name):
                         suite_class = getattr(suite, class_name)
                         if isinstance(suite_class, type) and issubclass(suite_class, BaseSuite):
-                            self._suites[suite_name] = suite_class
+                            self._suites[suite_name] = {'class': suite_class}
+                            self._suites[suite_name]['config'] = suite_config
                             logger.info(f"Discovered test suite: {class_name}")
                         else:
                             logger.error(
@@ -246,111 +372,14 @@ class SuiteRunner:
                 logger.error(f"Failed to load suite {suite_path}: {e}")
                 continue
         
+        # Get a list of suite names
+        self._suite_names = list(self._suites.keys())
+
         # Log loaded suites
-        logger.info(f"Loaded {len(self._suites)} suites")
-        logger.debug(f"Available suites: {list(self._suites.keys())}")
+        logger.info(f"Loaded suites: {self._suite_names}")
+        logger.debug(f"Available suites: {self._suites}")
         if not self._suites:
             logger.warning("No suites loaded")
-
-    def run_suite(
-        self, 
-        suite_name: str,
-        submission_id: int,
-        suite_config: dict = None, 
-    ) -> SuiteResult:
-        """Run a specific suite with the given submission path
-
-        Args:
-            suite_name (str): Name of the suite to run
-            submission_id (int): Unique identifier for the student's submission
-            suite_config (dict, optional): Configuration for the suite.
-
-        Returns:
-            result: Result of the suite's run method
-        """
-
-        # Validate suite name
-        if suite_name not in self._suites:
-            raise ValueError(f"Suite '{suite_name}' not found")
-        
-        # Validate suite configuration
-        if suite_config is None:
-            suite_config = self._config.get("default_suite_config", {})
-        if not suite_config:
-            raise ValueError(f"No configuration provided for suite '{suite_name}'")
-        
-        # Get timeout
-        timeout_sec = suite_config.get("timeout_sec", DEFAULT_TIMEOUT_SEC)
-        if timeout_sec <= 0:
-            raise ValueError(f"Invalid timeout for suite '{suite_name}': {timeout_sec} seconds")
-        
-        # Initialize the result
-        result = SuiteResult(
-            success=False,
-            score=0.0,
-            max_score=suite_config.get("max_score", 0.0),
-            feedback_messages=[],
-            error=None,
-        )
-
-        try:
-            # Get the suite class
-            suite_class = self._suites[suite_name]
-
-            # Create a dictionary to store the result of the suite run
-            return_dict = multiprocessing.Manager().dict()
-
-            # Create a new process for the suite
-            process = multiprocessing.Process(
-                target=run_suite_process,
-                args=(
-                    suite_class, 
-                    self._work_path,
-                    submission_id,
-                    suite_config, 
-                    logger.level,
-                    return_dict,
-                )
-            )
-
-            # Start the process
-            process.start()
-            process.join(timeout=timeout_sec)
-            if process.is_alive():
-                logger.warning(f"Suite '{suite_name}' timed out after {timeout_sec} seconds")
-                process.terminate()
-                return None
-            
-            # Check exit code
-            if process.exitcode != 0:
-                logger.error(f"Suite '{suite_name}' exited with code {process.exitcode}")
-                return None
-
-        except Exception as e:
-            logger.error(f"Error running suite '{suite_name}': {e}")
-            return None
-        
-        # Extract the result from the return dictionary
-        result.success = return_dict['success']
-        result.score = return_dict.get('score', 0.0)
-        result.max_score = return_dict.get('max_score', 0.0)
-        result.feedback_messages = return_dict.get('feedback_messages', [])
-        result.error = return_dict.get('error', None)
-
-        # Log the result
-        logger.debug(f"Suite '{suite_name}' result: {result}")
-        if result.success:
-            logger.info(
-                f"Suite '{suite_name}' for ID {submission_id} completed with "
-                f"score {result.score}/{result.max_score}"
-            )
-        else:
-            logger.error(
-                f"Suite '{suite_name}' for ID {submission_id} failed with error: "
-                f"{result.error or 'Unknown error'}"
-            )
-
-        return result
 
 class Autograder:
     """Main class for the autograder framework
@@ -361,30 +390,36 @@ class Autograder:
 
     def __init__(
             self, 
-            submission: str,
             config_path: str,
             submission_id: int = -1,
-            output_path: str = "./",
-            work_path: str = "./",
+            output_path: str = "./output.txt",
+            work_dir: str = "./",
         ):
         """Initialize the autograder with optional configuration and suite paths
 
         Args:
-            submission (str): Path to the submission zip file
             config_path (str): Path to the configuration file (YAML format)
             submission_id (int, optional): Unique identifier for the student's submission.
             output_path (str, optional): Path to output directory for results. 
                 Defaults to current directory.
-            work_path (str, optional): Path to the directory where the 
+            work_dir (str, optional): Path to the directory where the 
                 submission is unzipped and compiled. Defaults to current directory.
         """
 
         # Set attributes from arguments
         self._config_path = pathlib.Path(config_path).resolve()
-        self._output_path = output_path
-        self._submission = submission
-        self._work_path = work_path
+        self._output_path = pathlib.Path(output_path).resolve()
         self._submission_id = submission_id
+
+        # Validate work directory, create if it does not exist
+        if not work_dir:
+            raise ValueError("Work directory is required")
+        self._work_path = pathlib.Path(work_dir).resolve()
+        if not self._work_path.is_dir():
+            logger.debug(f"Creating work directory: {self._work_path}")
+            self._work_path.mkdir(parents=True, exist_ok=True)
+        logger.debug(f"Work path resolved to: {self._work_path}")
+
 
         # Load configuration
         self._config = self._load_config()
@@ -396,47 +431,142 @@ class Autograder:
         self._suite_runner = SuiteRunner(
             self._config, 
             self._config_path.parent, 
-            self._work_path
+            self._work_path,
+            self._submission_id,
         )
 
     def grade(self):
         """Run the grading process"""
         logger.info("Starting grading process")
-
-        # Copy and extract submission
-        try:
-            grading_path = self._copy_and_extract_submission()
-            logger.info(f"Submission extracted to {grading_path}")
-        except Exception as e:
-            logger.error(f"Failed to extract submission: {e}")
-            return
         
+        # Record total/max score and feedback messages
+        total_score = 0.0
+        total_max_score = 0.0
+        feedback = []
+
+        # Get timestamp
+        timestamp = datetime.now()
+
         # Run each suite specified in the configuration
-        for suite in self._config.get("suites", []):
-            suite_name = next(iter(suite))
-            suite_config = suite[suite_name]
+        for suite_name in self._suite_runner.suite_names:
+
+            # Add max score
+            suite_config = self._suite_runner.get_suite_config(suite_name)
+            suite_max_score = suite_config.get("max_score", 0.0)
+            total_max_score += suite_max_score
+
+            # Delineate the suite in the feedback
+            feedback.append("")
+            feedback.append(f"=== Suite: {suite_name} ===")
+
+            # Run the suite
             logger.info(f"Running suite: '{suite_name}'")
-            logger.debug(f"Suite '{suite_name}' config: {suite_config}")
             try:
-                result = self._suite_runner.run_suite(
-                    suite_name, 
-                    self._submission_id,
-                    suite_config,
-                )
+                result = self._suite_runner.run_suite(suite_name)
             except Exception as e:
                 logger.error(f"Error running suite '{suite_name}': {e}")
+                feedback.append(f"Error running suite '{suite_name}': {e}")
+                feedback.append(f"Suite score: 0 / {suite_max_score}")
                 continue
 
             # Handle the result of the suite run
             if result is None:
                 logger.error(f"Suite '{suite_name}' did not return a valid result")
+                feedback.append(f"Suite '{suite_name}' did not return a valid result")
+                feedback.append(f"Suite score: 0 / {suite_max_score}")
                 continue
 
-            # TODO:
-            # - Update total score based on the suite result
-            # - Update log of feedback messages
+            # Stop grading if the suite failed and config is set to stop on failure
+            stop_on_failure = self._suite_runner.get_suite_config(suite_name).get(
+                "stop_on_failure", 
+                DEFAULT_STOP_ON_FAILURE,
+            )
+            if not result.success and stop_on_failure:
+                logger.warning(f"Suite '{suite_name}' failed, stopping further grading")
+                feedback.append(
+                    f"Suite failed: {result.error or 'No error message provided'}"
+                )
+                feedback.append(f"Suite score: 0 / {suite_max_score}")
+                break
 
+            # If the suite did not run successfully, log the error
+            if not result.success:
+                logger.error(f"Suite '{suite_name}' failed: {result.error}")
+                feedback.append(
+                    f"Suite failed: {result.error or 'No error message provided'}"
+                )
+                feedback.append(f"Suite score: 0 / {suite_max_score}")
+                continue
+
+            # Update total score
+            total_score += result.score
+
+            # Collect feedback messages
+            if result.feedback_messages:
+                feedback.extend(result.feedback_messages)
+                logger.info(f"Feedback from suite '{suite_name}': {result.feedback_messages}")
+
+            # Add suite score to feedback
+            suite_score = f"Suite score: {result.score} / {result.max_score}"
+            feedback.append(suite_score)
+
+        # Get elapsed time
+        elapsed_time = datetime.now() - timestamp
+
+        # Log the final results
+        logger.info(f"Grading completed for submission ID {self._submission_id}")
+        logger.info(f"Total score: {total_score}/{total_max_score}")
+
+        # Prepend stats to feedback
+        feedback.insert(0, f"Submission ID: {self._submission_id}")
+        feedback.insert(1, f"Total score: {total_score} / {total_max_score}")
+        feedback.insert(2, f"Elapsed time: {elapsed_time}")
         
+        # Create output directory if it does not exist
+        if self._output_path.parent and not self._output_path.parent.exists():
+            logger.debug(f"Creating output directory: {self._output_path.parent}")
+            self._output_path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Remove existing output file if it exists
+        if self._output_path.exists():
+            logger.debug(f"Removing existing output file: {self._output_path}")
+            self._output_path.unlink()
+
+        # Write feedback to the output file
+        logger.debug(f"Feedback messages: {feedback}")
+        with open(self._output_path, 'w') as output_file:
+            for line in feedback:
+                output_file.write(f"{line}\n")
+        logger.info(f"Feedback written to {self._output_path}")
+        
+    def extract_submission(self, submission: str):
+        """Copy and extract the submission zip file
+
+        Returns:
+            pathlib.Path: Path to the extracted directory for grading
+        """
+        if not submission:
+            raise ValueError("Path to submission zip file is required")
+
+        # Create a temporary directory for the submission
+        if self._work_path:
+            temp_dir = pathlib.Path(self._work_path)
+        else:
+            temp_dir = pathlib.Path(DEFAULT_UNZIP_DIR)
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        logger.info(f"Temporary directory created at {temp_dir}")
+
+        # Copy the submission zip file to the temporary directory
+        shutil.copy(submission, temp_dir / "submission.zip")
+
+        # Extract the zip file and remove the zip file
+        shutil.unpack_archive(temp_dir / "submission.zip", temp_dir)
+        (temp_dir / "submission.zip").unlink()
+
+        # Check if the extracted directory is valid
+        if not temp_dir.is_dir():
+            raise ValueError(f"Invalid submission directory: {temp_dir}")
+    
     def _load_config(self):
         """Load the autograder configuration from a YAML file
 
@@ -454,36 +584,6 @@ class Autograder:
         except Exception as e:
             logger.error(f"Failed to load configuration: {e}")
             raise
-        
-    def _copy_and_extract_submission(self):
-        """Copy and extract the submission zip file
-
-        Returns:
-            pathlib.Path: Path to the extracted directory for grading
-        """
-        if not self._submission:
-            raise ValueError("Submission path is required")
-
-        # Create a temporary directory for the submission
-        if self._work_path:
-            temp_dir = pathlib.Path(self._work_path)
-        else:
-            temp_dir = pathlib.Path(DEFAULT_UNZIP_DIR)
-        temp_dir.mkdir(parents=True, exist_ok=True)
-        logger.info(f"Temporary directory created at {temp_dir}")
-
-        # Copy the submission zip file to the temporary directory
-        shutil.copy(self._submission, temp_dir / "submission.zip")
-
-        # Extract the zip file and remove the zip file
-        shutil.unpack_archive(temp_dir / "submission.zip", temp_dir)
-        (temp_dir / "submission.zip").unlink()
-
-        # Check if the extracted directory is valid
-        if not temp_dir.is_dir():
-            raise ValueError(f"Invalid submission directory: {temp_dir}")
-
-        return temp_dir
 
 ################################################################################
 # Main entry point
@@ -514,24 +614,26 @@ def main():
         help="Unique identifier for the student's submission (default: -1)",
     )
     parser.add_argument(
-        "--output_dir",
+        "--output",
         "-o",
-        required=True,
         type=str,
-        help="Path to output directory for results",
+        default="./output.txt",
+        help="Path to output file for results. Defaults to ./output.txt. Note that any existing "
+            "file will be overwritten.",
     )
     parser.add_argument(
         "--submission",
         "-s",
-        required=True,
         type=str,
         help="Path to the submission zip file",
     )
     parser.add_argument(
         "--work_dir",
         "-w",
+        required=True,
         type=str,
-        help="Path to the directory where the submission is unzipped and compiled",
+        help="Path to the directory where the submission is unzipped and compiled. This directory "
+            "will be created if it does not exist.",
     )
     
     # Parse arguments
@@ -546,14 +648,26 @@ def main():
     # Print welcome message
     logger.info(f"ByteGrader Autograder Framework v{__version__}")
 
-    # Run autograder
+    # Initialize the autograder
     autograder = Autograder(
         config_path=args.config,
-        submission=args.submission,
         submission_id=args.id,
-        output_path=args.output_dir,
-        work_path=args.work_dir,
+        output_path=args.output,
+        work_dir=args.work_dir,
     )
+
+    # Extract the submission if provided
+    if args.submission:
+        try:
+            autograder.extract_submission(args.submission)
+            logger.info(f"Submission extracted to {args.work_dir}")
+        except Exception as e:
+            logger.error(f"Failed to extract submission: {e}")
+            return
+    else:
+        logger.info(f"Skipping extraction. Grading in {args.work_dir}")
+        
+    # Run the grading process
     autograder.grade()
 
 if __name__ == "__main__":

@@ -46,37 +46,30 @@ RUN apt-get clean -y && \
 # Autograder setup
 
 # Set up directories for autograder
-RUN mkdir -p /app/config /app/modules /app/submission
+RUN mkdir -p /app/
 WORKDIR /app
-
-# Copy in autograder scripts
-COPY scripts/autograder/*.py /app/
-COPY scripts/autograder/config/ /app/config/
-COPY scripts/autograder/modules/ /app/modules/
 
 # Create virtual environment for autograder
 RUN python3 -m venv /app/venv
 ENV PATH="/app/venv/bin:$PATH"
 ENV VIRTUAL_ENV="/app/venv"
 
-# Install autograder dependencies
-COPY scripts/autograder/requirements.txt /app/requirements.txt
+# Install bytegrader dependencies
+COPY requirements.txt /app/requirements.txt
 RUN python3 -m pip install --upgrade pip && \
     python3 -m pip install --no-cache-dir -r /app/requirements.txt
 
-# Make the autograder scripts executable
-RUN chmod +x /app/autograder.py
+# Install bytegrader from source
+COPY setup.py /app/
+COPY src/ /app/src/
+RUN python3 -m pip install -e .
 
 #-------------------------------------------------------------------------------
 # Entrypoint
 
-# Export environment variables to be system-wide
-RUN echo "IDF_TOOLS_PATH=${IDF_TOOLS_PATH}" >> /etc/environment && \
-    echo "IDF_VERSION=${IDF_VERSION}" >> /etc/environment
+# Create a directory for submissions and suites
+RUN mkdir -p /app/submissions
+RUN mkdir -p /app/suites
 
-# Add alias to bashrc and enable environment on terminal open
-RUN echo "alias get_idf='. /opt/toolchains/esp-idf/export.sh'" >> /root/.bashrc && \
-    echo "get_idf" >> /root/.bashrc
-
-# Set the entrypoint to our Python script
-ENTRYPOINT ["python3", "/app/autograder.py", "--course", "/app/esp32_iot_course.json", "--debug"]
+# Set the entrypoint to bytegrader
+ENTRYPOINT ["python3", "-m", "bytegrader.bytegrader"]

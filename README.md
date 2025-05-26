@@ -31,11 +31,12 @@ _Coming soon…_
 
 ## Todo
 
- * Add run/stop based on test fail and config settings
- * Total score and log all feedback messages to file(s) in output directory
- * Create tests: bad code (does not compile), malicious code (forever loop)
- * Add pattern checking (i.e. did student call a particular function)
  * Dockerize stuff
+ * Create Arduino example
+ * Make multi-stage Docker build for adding in environments (e.g. Arduino, ESP-IDF)
+ * Build API for hosting site and LearnDash
+ * Build loading scripts for hosting
+ * Add pattern checking (i.e. did student call a particular function)
  * Add schema type checking for YAML config files
  * Set up GitHub actions for continuous testing (start with basic integration tests)
  * Construct unit tests
