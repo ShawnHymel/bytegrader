@@ -35,7 +35,7 @@ COURSE_DOMAIN="${COURSE_SUBDOMAIN}.${MAIN_DOMAIN}"
 echo "🚀 Setting up ByteGrader server infrastructure:"
 echo "  Main domain: $MAIN_DOMAIN (redirects to GitHub repo)"
 echo "  Course API: $COURSE_DOMAIN (autograder)"
-echo "  Email for SSL certification notifications: $EMAIL"
+echo "  SSL email: $EMAIL"
 echo ""
 
 # Confirm before proceeding
@@ -57,8 +57,16 @@ curl -fsSL https://get.docker.com -o get-docker.sh
 sh get-docker.sh && rm get-docker.sh
 apt install -y docker-compose-plugin
 
-echo "👤 Creating bytegrader user..."
-adduser --disabled-password --gecos "" bytegrader
+echo "👤 Setting up bytegrader user..."
+# Check if user already exists
+if id "bytegrader" &>/dev/null; then
+    echo "✅ bytegrader user already exists"
+else
+    echo "🆕 Creating bytegrader user..."
+    adduser --disabled-password --gecos "" bytegrader
+fi
+
+# Always ensure user is in correct groups (safe to run multiple times)
 usermod -aG docker bytegrader
 usermod -aG sudo bytegrader
 

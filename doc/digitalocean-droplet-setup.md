@@ -61,5 +61,11 @@ Make sure that you are SSH'd into your server. In the server, clone the ByteGrad
 ```
 git clone https://github.com/ShawnHymel/bytegrader.git
 cd bytegrader
+chmod +x ./deploy/*.sh
 ./deploy/server-setup.sh <DOMAIN> <SUBDOMAIN> <EMAIL>
 ```
+
+During the setup process, if OpenSSH asks you about modifying *sshd_config*, select the default "Keep the local version currently installed."
+
+> **Note:** If the setup process fails, you might have to delete the *bytegrader* user and try again: `userdel -r bytegrader 2>/dev/null || true`
+
