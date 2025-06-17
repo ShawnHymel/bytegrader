@@ -1,6 +1,6 @@
 # ByteGrader Autograder Framework
 
-<img src=".images/bytegrader-logo.png" alt="ByteGrader logo" width="200" />
+<img src=".images/bytegrader-logo-text_2000px.png" alt="ByteGrader logo" width="1000" />
 
 **ByteGrader** is an open-source, modular autograder designed to evaluate programming assignments in embedded systems, IoT, and edge AI. Built to support a variety of programming languages, it uses containerized environments to reliably compile, run, and assess student submissions.
 
@@ -31,7 +31,6 @@ _Coming soon…_
 
 ## Todo
 
- * Dockerize stuff
  * Create Arduino example
  * Make multi-stage Docker build for adding in environments (e.g. Arduino, ESP-IDF)
  * Build API for hosting site and LearnDash
