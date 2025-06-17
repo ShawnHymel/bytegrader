@@ -1,0 +1,54 @@
+services:
+  ${COURSE_SUBDOMAIN}-grader:
+    build: .
+    container_name: bytegrader-${COURSE_SUBDOMAIN}
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ./graders:/usr/local/bin/graders:ro
+      - ./uploads:/tmp/uploads
+      - ./logs:/app/logs
+    
+    environment:
+      # Course-specific settings
+      - PORT=8080
+      - COURSE_ID=${COURSE_SUBDOMAIN}
+      - MAX_FILE_SIZE_MB=50
+      - GRADING_TIMEOUT_MIN=10  # Longer for ESP32 compilation
+      - MAX_CONCURRENT_JOBS=2
+      - UPLOADS_DIR=/tmp/uploads
+      - GRADING_SCRIPTS_DIR=/usr/local/bin/graders
+      
+      # Security settings (start permissive, secure later)
+      - REQUIRE_API_KEY=false
+      - RATE_LIMIT_ENABLED=true
+      - RATE_LIMIT_REQUESTS=15
+      - RATE_LIMIT_WINDOW_MIN=5
+      
+      # Cleanup settings
+      - CLEANUP_INTERVAL_HOURS=1
+      - COMPLETED_JOB_TTL_HOURS=24
+      - FAILED_JOB_TTL_HOURS=24
+      - OLD_FILE_TTL_HOURS=48
+    
+    restart: unless-stopped
+    
+    security_opt:
+      - no-new-privileges:true
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
