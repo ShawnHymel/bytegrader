@@ -1,5 +1,5 @@
 #!/bin/bash
-# scripts/setup-ssl.sh - Set up SSL certificates with Let's Encrypt
+# deploy/setup-ssl.sh - Set up SSL certificates with Let's Encrypt
 # This is a template file - variables will be substituted by server-setup.sh
 # Variables: ${MAIN_DOMAIN}, ${COURSE_DOMAIN}, ${EMAIL}
 

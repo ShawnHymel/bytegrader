@@ -1,7 +1,7 @@
 #!/bin/bash
-# scripts/server-setup.sh - Set up ByteGrader server infrastructure
-# Usage: ./scripts/server-setup.sh <main_domain> <course_subdomain> <email>
-# Example: ./scripts/server-setup.sh bytegrader.com iot-esp32 you@example.com
+# deploy/server-setup.sh - Set up ByteGrader server infrastructure
+# Usage: ./deploy/server-setup.sh <main_domain> <course_subdomain> <email>
+# Example: ./deploy/server-setup.sh bytegrader.com iot-esp32 you@example.com
 
 set -e
 
@@ -23,8 +23,6 @@ if [ $# -ne 3 ]; then
     echo "This will set up:"
     echo "  - Main domain (redirects to GitHub): https://MAIN_DOMAIN"
     echo "  - Course API: https://COURSE_SUBDOMAIN.MAIN_DOMAIN"
-    echo "  - Email for SSL certificate notifications: EMAIL"
-    echo ""
     exit 1
 fi
 
@@ -37,7 +35,7 @@ COURSE_DOMAIN="${COURSE_SUBDOMAIN}.${MAIN_DOMAIN}"
 echo "🚀 Setting up ByteGrader server infrastructure:"
 echo "  Main domain: $MAIN_DOMAIN (redirects to GitHub repo)"
 echo "  Course API: $COURSE_DOMAIN (autograder)"
-echo "  SSL email: $EMAIL"
+echo "  Email for SSL certification notifications: $EMAIL"
 echo ""
 
 # Confirm before proceeding
@@ -83,8 +81,8 @@ chown -R bytegrader:bytegrader /home/bytegrader
 
 echo "🌐 Creating nginx configuration from template..."
 # Check if template exists
-if [ ! -f "nginx/bytegrader.conf.template" ]; then
-    echo "❌ nginx/bytegrader.conf.template not found!"
+if [ ! -f "deploy/bytegrader.conf.template" ]; then
+    echo "❌ deploy/bytegrader.conf.template not found!"
     echo "💡 Make sure you're running this from the bytegrader repository root"
     exit 1
 fi
@@ -93,7 +91,7 @@ fi
 sed -e "s/\${MAIN_DOMAIN}/$MAIN_DOMAIN/g" \
     -e "s/\${COURSE_DOMAIN}/$COURSE_DOMAIN/g" \
     -e "s/\${COURSE_SUBDOMAIN}/$COURSE_SUBDOMAIN/g" \
-    nginx/bytegrader.conf.template > /etc/nginx/sites-available/bytegrader
+    deploy/bytegrader.conf.template > /etc/nginx/sites-available/bytegrader
 
 # Enable the site
 ln -sf /etc/nginx/sites-available/bytegrader /etc/nginx/sites-enabled/
@@ -125,7 +123,7 @@ echo "🔧 Creating SSL setup script..."
 sed -e "s/\${MAIN_DOMAIN}/$MAIN_DOMAIN/g" \
     -e "s/\${COURSE_DOMAIN}/$COURSE_DOMAIN/g" \
     -e "s/\${EMAIL}/$EMAIL/g" \
-    scripts/setup-ssl.sh > /root/setup_ssl.sh
+    deploy/setup-ssl.sh > /root/setup_ssl.sh
 chmod +x /root/setup_ssl.sh
 
 echo "✅ Server setup complete!"

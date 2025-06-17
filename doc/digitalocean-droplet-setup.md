@@ -35,25 +35,31 @@ Feel free to purchase any add-ons if needed and give your server a unique hostna
 
 Once it's done, you should be back in your DigitalOcean project dashboard. Note the IP address of your server!
 
-## Configure DNS
-
-We will assume that you want the Droplet to handle grading for multiple courses. So, we will create a subdomain for each course. For example, if `bytegrader.com` is the main domain for the grader, we will redirect `bytegrader.com` to the ByteGrader GitHub repo (using nginx), but `esp32-iot.bytegrader.com` will be the URL for the autograder.
-
-Log in to your domain name provider and click to manage your domain for your grader. Add the following records (ask ChatGPT for specifics if you don't know how to do this for your particular domain name provider). Note that `<COURCE_SUBDOMAIN>` is your course tag (e.g. `esp32-iot`) and `<YOUR_DROPLET_IP>` is the IP address we got for our Droplet in the previous step.
-
-| Type  |  Host | Value | TTL |
-|-------|-------|-------|-----|
-| A     |  @    | <YOUR_DROPLET_IP> | Automatic |
-| A     |  www  | <YOUR_DROPLET_IP> | Automatic |
-| A     | <COURSE_SUBDOMAIN> | <YOUR_DROPLET_IP> | Automatic |
-
-
-
-## Configure ByteGrader
-
 Log into your server via SSH. Change `id_ed25519_droplet` to the name of your *SSH private key file, and change `<SERVER_IP_ADDRESS>` to the IP address of your server.
 
 ```sh
 cd ~/.ssh/
 ssh -i id_ed25519_droplet root@<SERVER_IP_ADDRESS>
+```
+
+## Configure DNS
+
+We will assume that you want the Droplet to handle grading for multiple courses. So, we will create a subdomain for each course. For example, if `bytegrader.com` is the main domain for the grader, we will redirect `bytegrader.com` to the ByteGrader GitHub repo (using nginx), but `esp32-iot.bytegrader.com` will be the URL for the autograder.
+
+Log in to your domain name provider and click to manage your domain for your grader. Add the following records (ask ChatGPT for specifics if you don't know how to do this for your particular domain name provider). Note that `<SUBDOMAIN>` is your course tag (e.g. `esp32-iot`) and `<YOUR_DROPLET_IP>` is the IP address we got for our Droplet in the previous step.
+
+| Type  |  Host | Value | TTL |
+|-------|-------|-------|-----|
+| A     |  @    | <YOUR_DROPLET_IP> | Automatic |
+| A     |  www  | <YOUR_DROPLET_IP> | Automatic |
+| A     | <SUBDOMAIN> | <YOUR_DROPLET_IP> | Automatic |
+
+## Configure ByteGrader
+
+Make sure that you are SSH'd into your server. In the server, clone the ByteGrader repository and run the setup scripts. Note that `<DOMAIN>` is the domain you bought earlier (e.g. *bytegrader.com*), `<SUBDOMAIN>` is the subdomain you set in your DNS (e.g. `esp32-iot`), and `<EMAIL>` is your desired email address (for SSL certification notifications via [certbot](https://certbot.eff.org/)).
+
+```
+git clone https://github.com/ShawnHymel/bytegrader.git
+cd bytegrader
+./deploy/server-setup.sh <DOMAIN> <SUBDOMAIN> <EMAIL>
 ```

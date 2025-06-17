@@ -1,5 +1,6 @@
 # ByteGrader nginx configuration template
 # Variables: ${MAIN_DOMAIN}, ${COURSE_DOMAIN}, ${COURSE_SUBDOMAIN}
+# Location: deploy/bytegrader.conf.template
 
 # Redirect main domain to GitHub repo
 server {
