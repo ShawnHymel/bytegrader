@@ -81,12 +81,12 @@ If you don't want to log in directly as *bytegrader*, you can log in as root and
 su - bytegrader
 ```
 
-Make sure you are in the *bytegrader* user, and then clone the repo:
+Make sure you are in the **bytegrader** user, and then clone the repo:
 
 ```sh
 cd /home/bytegrader/
 git clone https://github.com/ShawnHymel/bytegrader.git
-cd bytegrader
+cd bytegrader/
 ```
 
 Feel free to check out a particular tag, version, or branch. (e.g. `git checkout v1.2`).
@@ -94,10 +94,10 @@ Feel free to check out a particular tag, version, or branch. (e.g. `git checkout
 Make sure the setup scripts are executable:
 
 ```sh
-chmod +x ./deploy/*.sh
+chmod +x deploy/*.sh
 ```
 
-Log back in as *root* (or enter `logout` to escape out of the `su - bytegrader` shell). Then, run the server setup script as a superuser. Note that `<DOMAIN>` is the domain you bought earlier (e.g. *bytegrader.com*), `<SUBDOMAIN>` is the subdomain you set in your DNS (e.g. `esp32-iot`), and `<EMAIL>` is your desired email address (for SSL certification notifications via [certbot](https://certbot.eff.org/)).
+Log back in as **root** (or enter `logout` to escape out of the `su - bytegrader` shell). Then, run the server setup script as a superuser. Note that `<DOMAIN>` is the domain you bought earlier (e.g. *bytegrader.com*), `<SUBDOMAIN>` is the subdomain you set in your DNS (e.g. `esp32-iot`), and `<EMAIL>` is your desired email address (for SSL certification notifications via [certbot](https://certbot.eff.org/)).
 
 ```sh
 cd /home/bytegrader/bytegrader/
@@ -106,7 +106,14 @@ cd /home/bytegrader/bytegrader/
 
 ## Deploy ByteGrader Server App
 
-Log in as 
+Log in as the **bytegrader**, make an *app/* directory, and run the deploy app. The *deploy.sh* script will copy the relevant files from the repo to the *app/* directory.
+
+```sh
+cd /home/bytegrader/
+mkdir -p app/
+cd bytegrader/
+./deploy/deploy.sh /home/bytegrader/app/
+```
 
 
 ## How to Deploy the ByteGrader Server App

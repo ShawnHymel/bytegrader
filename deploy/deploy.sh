@@ -28,6 +28,16 @@ REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 echo "📂 Repository directory: $REPO_DIR (auto-detected)"
 echo "📂 App directory: $APP_DIR (specified)"
 
+# Load environment variables
+if [ -f ~/.bytegrader_env ]; then
+    source ~/.bytegrader_env
+    echo "✅ Loaded environment variables"
+    echo "📋 Course: $BYTEGRADER_COURSE_DOMAIN"
+else
+    echo "❌ Environment file not found"
+    echo "💡 Run server setup first: sudo ./deploy/server-setup.sh <domain> <subdomain> <email>"
+    exit 1
+fi
 
 # Validate repository directory
 if [ ! -f "$REPO_DIR/main.go" ]; then
@@ -52,9 +62,15 @@ cp "$REPO_DIR/main.go" .
 cp "$REPO_DIR/go.mod" .
 cp "$REPO_DIR/go.sum" .
 
-# Copy deployment files (Dockerfile, docker-compose.yml) using absolute paths
+echo "📂 Copying and configuring deployment files..."
+# Set variables for envsubst (it expects different names than our env file)
+export COURSE_SUBDOMAIN="$BYTEGRADER_COURSE_SUBDOMAIN"
+
+# Copy and process docker-compose.yml with environment variables
+envsubst < "$REPO_DIR/deploy/docker-compose.yml" > docker-compose.yml
+
+# Copy Dockerfile
 cp "$REPO_DIR/deploy/Dockerfile" .
-cp "$REPO_DIR/deploy/docker-compose.yml" .
 
 # Copy graders directory
 mkdir -p graders
@@ -95,8 +111,23 @@ if docker compose ps | grep -q "Up"; then
     echo "🧪 Test locally:"
     echo "   curl http://localhost:8080/health"
     echo ""
-    echo "📊 View status:"
-    echo "   docker compose ps"
+    echo "🌐 Test via domain (after DNS propagates):"
+    echo "   curl http://$BYTEGRADER_COURSE_DOMAIN/health"
+    echo ""
+    echo "📊 Monitor:"
+    echo "   cd $APP_DIR"
+    echo "   docker compose ps           # Service status"
+    echo "   docker compose logs -f      # View logs"
+    echo ""
+    echo "🔧 Manage:"
+    echo "   cd $APP_DIR"
+    echo "   docker compose restart      # Restart services"
+    echo "   docker compose down         # Stop services"
+    echo ""
+    echo "📋 Next steps:"
+    echo "1. Test DNS: nslookup $BYTEGRADER_COURSE_DOMAIN"
+    echo "2. Enable HTTPS: sudo /root/setup_ssl.sh"
+    echo "3. Test HTTPS: curl https://$BYTEGRADER_COURSE_DOMAIN/health"
     echo ""
     echo "📋 View logs:"
     echo "   docker compose logs -f"
