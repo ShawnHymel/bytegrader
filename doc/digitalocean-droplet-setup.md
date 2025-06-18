@@ -54,7 +54,9 @@ Log in to your domain name provider and click to manage your domain for your gra
 | A     |  www  | <YOUR_DROPLET_IP> | Automatic |
 | A     | <SUBDOMAIN> | <YOUR_DROPLET_IP> | Automatic |
 
-## Configure ByteGrader
+## Set Up Server
+
+To start, we'll need to clone the repository, install some dependencies, and create a new *bytegrader* user (so that we don't run everything as root).
 
 Make sure that you are SSH'd into your server. In the server, clone the ByteGrader repository and run the setup scripts. Note that `<DOMAIN>` is the domain you bought earlier (e.g. *bytegrader.com*), `<SUBDOMAIN>` is the subdomain you set in your DNS (e.g. `esp32-iot`), and `<EMAIL>` is your desired email address (for SSL certification notifications via [certbot](https://certbot.eff.org/)).
 
@@ -69,3 +71,32 @@ During the setup process, if OpenSSH asks you about modifying *sshd_config*, sel
 
 > **Note:** If the setup process fails, you might have to delete the *bytegrader* user and try again: `userdel -r bytegrader 2>/dev/null || true`
 
+Check the setup script logs for errors before moving on to the next step.
+
+## Install ByteGrader
+
+Now, we need to sign in as the *bytegrader* user and run the *deploy* script to install the ByteGrader app on our server.
+
+```sh
+su - bytegrader 
+cd app 
+./deploy.sh
+exit 
+sudo /root/setup_ssl.sh
+```
+
+## How to Update ByteGrader
+
+Once the server is running, you can update ByteGrader (with minimal downtime) by logging into the server as the *bytegrader* user, updating the repository, and then calling the *deploy.sh* script again.
+
+```sh
+ssh bytegrader@<SUBDOMAIN>.<DOMAIN>
+cd bytegrader
+git pull origin main
+cd deploy
+./deploy.sh
+```
+
+TODO:
+ - Test deploy update from repo (above)
+ - App appears to be running...start test actual ByteGrader
