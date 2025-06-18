@@ -8,6 +8,7 @@ echo "🚀 Deploying ByteGrader application..."
 
 # Determine where we're running from and set up paths
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 if [ -f "$SCRIPT_DIR/../main.go" ]; then
     # Running from deploy/ directory in repo
     REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -28,17 +29,20 @@ else
     exit 1
 fi
 
+echo "📂 Repository directory: $REPO_DIR"
+echo "📂 App directory: $APP_DIR"
+
 # Ensure app directory exists
 mkdir -p "$APP_DIR"
 cd "$APP_DIR"
 
 echo "📂 Copying source files from repository..."
-# Copy source files from the repository to the deployment directory
+# Copy source files using absolute paths
 cp "$REPO_DIR/main.go" .
 cp "$REPO_DIR/go.mod" .
 cp "$REPO_DIR/go.sum" .
 
-# Copy deployment files (Dockerfile, docker-compose.yml)
+# Copy deployment files (Dockerfile, docker-compose.yml) using absolute paths
 cp "$REPO_DIR/deploy/Dockerfile" .
 cp "$REPO_DIR/deploy/docker-compose.yml" .
 

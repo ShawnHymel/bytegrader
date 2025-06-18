@@ -93,8 +93,7 @@ Once the server is running, you can update ByteGrader (with minimal downtime) by
 ssh bytegrader@<SUBDOMAIN>.<DOMAIN>
 cd bytegrader
 git pull origin main
-cd deploy
-./deploy.sh
+./deploy/deploy.sh
 ```
 
 TODO:
