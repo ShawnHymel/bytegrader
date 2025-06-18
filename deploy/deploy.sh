@@ -6,31 +6,41 @@ set -e
 
 echo "🚀 Deploying ByteGrader application..."
 
-# Determine where we're running from and set up paths
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-if [ -f "$SCRIPT_DIR/../main.go" ]; then
-    # Running from deploy/ directory in repo
-    REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-    APP_DIR="$(cd "$SCRIPT_DIR/../../app" && pwd)"
-    echo "📁 Running from repository deploy/ directory"
-elif [ -f "$SCRIPT_DIR/../bytegrader/main.go" ]; then
-    # Running from app/ directory (legacy)
-    REPO_DIR="$(cd "$SCRIPT_DIR/../bytegrader" && pwd)"
-    APP_DIR="$(cd "$SCRIPT_DIR" && pwd)"
-    echo "📁 Running from app/ directory"
-else
-    echo "❌ Error: Cannot find main.go"
-    echo "💡 Current directory: $(pwd)"
-    echo "💡 Script directory: $SCRIPT_DIR"
-    echo "💡 Looking for main.go at:"
-    echo "   - $SCRIPT_DIR/../main.go"
-    echo "   - $SCRIPT_DIR/../bytegrader/main.go"
+# Check that app directory argument is provided
+if [ $# -ne 1 ]; then
+    echo "Usage: $0 <app_dir>"
+    echo ""
+    echo "Examples:"
+    echo "  $0 ~/app"
+    echo "  $0 /home/bytegrader/app"
+    echo "  $0 /tmp/test-deployment"
+    echo ""
+    echo "The app directory will be created if it doesn't exist."
     exit 1
 fi
 
-echo "📂 Repository directory: $REPO_DIR"
-echo "📂 App directory: $APP_DIR"
+APP_DIR="$1"
+
+# Auto-detect repository directory from script location
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+echo "📂 Repository directory: $REPO_DIR (auto-detected)"
+echo "📂 App directory: $APP_DIR (specified)"
+
+
+# Validate repository directory
+if [ ! -f "$REPO_DIR/main.go" ]; then
+    echo "❌ Error: main.go not found in auto-detected repository: $REPO_DIR/main.go"
+    echo "💡 Make sure you're running this script from the ByteGrader repository"
+    echo "💡 Script location: $SCRIPT_DIR"
+    exit 1
+fi
+if [ ! -f "$REPO_DIR/deploy/docker-compose.yml" ]; then
+    echo "❌ Error: docker-compose.yml not found: $REPO_DIR/deploy/docker-compose.yml"
+    echo "💡 Make sure you're using a complete ByteGrader repository"
+    exit 1
+fi
 
 # Ensure app directory exists
 mkdir -p "$APP_DIR"

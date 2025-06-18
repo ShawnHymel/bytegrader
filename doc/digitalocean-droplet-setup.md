@@ -56,36 +56,60 @@ Log in to your domain name provider and click to manage your domain for your gra
 
 ## Set Up Server
 
-To start, we'll need to clone the repository, install some dependencies, and create a new *bytegrader* user (so that we don't run everything as root).
+To start, we'll create a new *bytegrader* user (so that we don't run everything as root), clone the repository, and configure the server. You should only need to do this once, and it should be done as *root*.
 
-Make sure that you are SSH'd into your server. In the server, clone the ByteGrader repository and run the setup scripts. Note that `<DOMAIN>` is the domain you bought earlier (e.g. *bytegrader.com*), `<SUBDOMAIN>` is the subdomain you set in your DNS (e.g. `esp32-iot`), and `<EMAIL>` is your desired email address (for SSL certification notifications via [certbot](https://certbot.eff.org/)).
+Make sure that you are SSH'd into your server (as *root*). Create the *bytegrader* user (this name is important, as the setup scripts assume you have such a user and home directory).
 
+```sh
+adduser --disabled-password --gecos "" bytegrader
+usermod -aG docker bytegrader
 ```
+
+ You can optionally copy the SSH keys so you can remotely log into the server as either root or bytegrader.
+
+```sh
+mkdir -p /home/bytegrader/.ssh
+cp /root/.ssh/authorized_keys /home/bytegrader/.ssh/
+chown -R bytegrader:bytegrader /home/bytegrader/.ssh
+chmod 700 /home/bytegrader/.ssh
+chmod 600 /home/bytegrader/.ssh/authorized_keys
+```
+
+If you don't want to log in directly as *bytegrader*, you can log in as root and switch to *bytegrader*. 
+
+```sh
+su - bytegrader
+```
+
+Make sure you are in the *bytegrader* user, and then clone the repo:
+
+```sh
+cd /home/bytegrader/
 git clone https://github.com/ShawnHymel/bytegrader.git
 cd bytegrader
+```
+
+Feel free to check out a particular tag, version, or branch. (e.g. `git checkout v1.2`).
+
+Make sure the setup scripts are executable:
+
+```sh
 chmod +x ./deploy/*.sh
+```
+
+Log back in as *root* (or enter `logout` to escape out of the `su - bytegrader` shell). Then, run the server setup script as a superuser. Note that `<DOMAIN>` is the domain you bought earlier (e.g. *bytegrader.com*), `<SUBDOMAIN>` is the subdomain you set in your DNS (e.g. `esp32-iot`), and `<EMAIL>` is your desired email address (for SSL certification notifications via [certbot](https://certbot.eff.org/)).
+
+```sh
+cd /home/bytegrader/bytegrader/
 ./deploy/server-setup.sh <DOMAIN> <SUBDOMAIN> <EMAIL>
 ```
 
-During the setup process, if OpenSSH asks you about modifying *sshd_config*, select the default "Keep the local version currently installed."
+## Deploy ByteGrader Server App
 
-> **Note:** If the setup process fails, you might have to delete the *bytegrader* user and try again: `userdel -r bytegrader 2>/dev/null || true`
+Log in as 
 
-Check the setup script logs for errors before moving on to the next step.
 
-## Install ByteGrader
-
-Now, we need to sign in as the *bytegrader* user and run the *deploy* script to install the ByteGrader app on our server.
-
-```sh
-su - bytegrader 
-cd app 
-./deploy.sh
-exit 
-sudo /root/setup_ssl.sh
-```
-
-## How to Update ByteGrader
+## How to Deploy the ByteGrader Server App
 
 Once the server is running, you can update ByteGrader (with minimal downtime) by logging into the server as the *bytegrader* user, updating the repository, and then calling the *deploy.sh* script again.
 
