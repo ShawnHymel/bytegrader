@@ -7,21 +7,24 @@ set -e
 echo "🚀 Deploying ByteGrader application..."
 
 # Determine where we're running from and set up paths
-if [ -f "../main.go" ]; then
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "$SCRIPT_DIR/../main.go" ]; then
     # Running from deploy/ directory in repo
-    REPO_DIR=".."
-    APP_DIR="../../app"
+    REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+    APP_DIR="$(cd "$SCRIPT_DIR/../../app" && pwd)"
     echo "📁 Running from repository deploy/ directory"
-elif [ -f "../bytegrader/main.go" ]; then
+elif [ -f "$SCRIPT_DIR/../bytegrader/main.go" ]; then
     # Running from app/ directory (legacy)
-    REPO_DIR="../bytegrader"
-    APP_DIR="."
+    REPO_DIR="$(cd "$SCRIPT_DIR/../bytegrader" && pwd)"
+    APP_DIR="$(cd "$SCRIPT_DIR" && pwd)"
     echo "📁 Running from app/ directory"
 else
     echo "❌ Error: Cannot find main.go"
-    echo "💡 Run this script from either:"
-    echo "   - /home/bytegrader/bytegrader/deploy/ (recommended)"
-    echo "   - /home/bytegrader/app/ (legacy)"
+    echo "💡 Current directory: $(pwd)"
+    echo "💡 Script directory: $SCRIPT_DIR"
+    echo "💡 Looking for main.go at:"
+    echo "   - $SCRIPT_DIR/../main.go"
+    echo "   - $SCRIPT_DIR/../bytegrader/main.go"
     exit 1
 fi
 
