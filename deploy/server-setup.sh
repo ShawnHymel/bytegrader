@@ -119,8 +119,29 @@ systemctl enable nginx
 systemctl restart nginx
 
 echo "📋 Copying deployment files to bytegrader user..."
-# Copy deployment files to bytegrader's home directory
-sudo -u bytegrader cp -r deploy/* /home/bytegrader/app/
+# Check if we're running from a git repository
+if [ -d ".git" ]; then
+    echo "📦 Detected git repository, copying to bytegrader user..."
+    # Copy entire repo to bytegrader's home directory
+    sudo -u bytegrader cp -r . /home/bytegrader/bytegrader/
+    # Fix any permission issues
+    chown -R bytegrader:bytegrader /home/bytegrader/bytegrader
+else
+    echo "⚠️  Not running from git repository"
+    echo "💡 After setup, clone the repo as bytegrader user:"
+    echo "   su - bytegrader"
+    echo "   git clone https://github.com/ShawnHymel/bytegrader.git"
+fi
+
+# Copy deployment files to app directory
+sudo -u bytegrader mkdir -p /home/bytegrader/app
+if [ -d "deploy" ]; then
+    sudo -u bytegrader cp -r deploy/* /home/bytegrader/app/
+else
+    echo "❌ deploy/ directory not found!"
+    echo "💡 Make sure you're running this from the bytegrader repository root"
+    exit 1
+fi
 chown -R bytegrader:bytegrader /home/bytegrader/app
 
 # Substitute variables in docker-compose.yml
