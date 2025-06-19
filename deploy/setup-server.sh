@@ -54,7 +54,7 @@ fi
 echo ""
 echo "🛡️  IP Whitelist (optional - leave empty to allow all IPs):"
 echo "Enter IP addresses or CIDR blocks separated by commas"
-echo "Examples: 192.168.1.100,203.0.113.5 or 192.168.1.0/24"
+echo "Examples: 203.0.113.5,2600:4d00:500:bf::/64 or 192.168.1.0/24"
 read -p "Allowed IPs (press Enter for none): " IP_WHITELIST
 
 # Prompt for API key (optional)

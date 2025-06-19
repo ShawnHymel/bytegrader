@@ -65,7 +65,7 @@ adduser --disabled-password --gecos "" bytegrader
 usermod -aG docker bytegrader
 ```
 
- You can optionally copy the SSH keys so you can remotely log into the server as either root or bytegrader.
+You can optionally copy the SSH keys so you can remotely log into the server as either root or bytegrader.
 
 ```sh
 mkdir -p /home/bytegrader/.ssh
@@ -97,16 +97,24 @@ Make sure the setup scripts are executable:
 chmod +x deploy/*.sh
 ```
 
-Log back in as **root** (or enter `logout` to escape out of the `su - bytegrader` shell). Then, run the server setup script as a superuser. Note that `<DOMAIN>` is the domain you bought earlier (e.g. *bytegrader.com*), `<SUBDOMAIN>` is the subdomain you set in your DNS (e.g. `esp32-iot`), and `<EMAIL>` is your desired email address (for SSL certification notifications via [certbot](https://certbot.eff.org/)).
+Log back in as **root** (or enter `logout` to escape out of the `su - bytegrader` shell). Then, run the server setup script as a superuser:
 
 ```sh
 cd /home/bytegrader/bytegrader/
-bash deploy/setup-server.sh <DOMAIN> <SUBDOMAIN> <EMAIL>
+bash deploy/setup-server.sh
 ```
+
+This will walk you through the process of assigning several important environment variables that are used throughout the setup process:
+
+ * **Main domain** - The main domain name you purchased earlier (e.g. bytegrader.com). Note that for now, this will redirect to `github.com/ShawnHymel/bytegrader`, as we only need the subdomain for our autograder endpoints.
+ * **Course subdomain** - The server will set up a subdomain for your course's autograder endpoints. For example, `esp32-iot` will mean the full URL of the autograder is `https://esp32-iot.bytegrader.com`.
+ * **Email** - Your email address for SSL certificate notifications (from [certbot](https://certbot.eff.org/))
+ * **IP whitelist** - List of IP addresses (comma separated) that are allowed to connect to the server. Leave empty to allow all connections. Ideally, this should be the IPv4 and IPv6 addresses of your course site (LMS) and your personal, public IP address (so you can test from home/office).
+ * **API key** - Secret key (password) used to authenticate clients connecting to the server. Ideally, only your LMS site should have the same key.
 
 ## Deploy ByteGrader Server App
 
-Log in as the **bytegrader** user, make an *app/* directory, and run the deploy app. The *deploy.sh* script will copy the relevant files from the repo to the *app/* directory.
+Log in as the **bytegrader** user (e.g. `su - bytegrader`), make an *app/* directory, and run the deploy app. The *deploy.sh* script will copy the relevant files from the repo to the *app/* directory.
 
 ```sh
 cd /home/bytegrader/
@@ -167,4 +175,18 @@ Verify that the server is running with:
 
 ```sh
 curl http://localhost:8080/health
+```
+
+## Test Grading
+
+From your home computer (assuming you've whitelisted your public IP address), you can test submitting a dummy file for grading using the *test-stub.py* (which always returns a static grade/feedback so long as it receives a .zip file).
+
+```sh
+curl -X POST -H "X-API-Key: <API_KEY>" -F "file=@test/submission-make-c-hello.zip" https://<SUBDOMAIN>.<DOMAIN>/submit?assignment=test-stub
+```
+
+You should receive a "File submitted for grading" JSON message back from the server. Copy the *job_id* and check the status of the grading job:
+
+```sh
+curl -H "X-API-Key: <API_KEY>" https://<SUBDOMAIN>.<DOMAIN>/status/<JOB_ID>
 ```
