@@ -1,47 +1,33 @@
-# ByteGrader nginx configuration template
-# Variables: ${MAIN_DOMAIN}, ${COURSE_DOMAIN}, ${COURSE_SUBDOMAIN}
-# Location: deploy/bytegrader.conf.template
-
-# Redirect main domain to GitHub repo
+# Redirect main domain to GitHub repo (HTTP only initially)
 server {
     listen 80;
     server_name ${MAIN_DOMAIN} www.${MAIN_DOMAIN};
-    
-    # Let's Encrypt challenge
-    location /.well-known/acme-challenge/ {
-        root /var/www/html;
-    }
-    
-    # Redirect to GitHub repo
-    location / {
-        return 301 https://github.com/ShawnHymel/bytegrader;
+    location / { 
+        return 301 https://github.com/ShawnHymel/bytegrader; 
     }
 }
 
-# Course-specific autograder
+# Course API (HTTP only initially - SSL will be added by setup-ssl.sh)
 server {
     listen 80;
     server_name ${COURSE_DOMAIN};
     
-    # Let's Encrypt challenge
-    location /.well-known/acme-challenge/ {
-        root /var/www/html;
-    }
-    
-    # Proxy to ByteGrader API
     location / {
         proxy_pass http://localhost:8080;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        client_max_body_size 100M;
-        
-        # Add course identification header
         proxy_set_header X-Course-ID ${COURSE_SUBDOMAIN};
         
-        # Timeout settings for long-running grading operations
         proxy_read_timeout 300s;
         proxy_connect_timeout 10s;
+        client_max_body_size 100M;
+    }
+    
+    location /health {
+        proxy_pass http://localhost:8080/health;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
     }
 }

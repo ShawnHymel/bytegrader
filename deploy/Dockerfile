@@ -4,7 +4,6 @@
 
 # --- Stage 1: Build the Go binary ---
 
-
 # Use a lightweight Go image for building the application
 FROM golang:1.24-alpine AS builder
 WORKDIR /app

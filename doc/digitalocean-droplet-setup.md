@@ -142,19 +142,29 @@ cd /home/bytegrader/bytegrader
 bash deploy/setup-ssl.sh
 ```
 
-
-
-## How to Deploy the ByteGrader Server App
-
-Once the server is running, you can update ByteGrader (with minimal downtime) by logging into the server as the *bytegrader* user, updating the repository, and then calling the *deploy.sh* script again.
+Hopefully, this completes successfully. You can check with:
 
 ```sh
-ssh bytegrader@<SUBDOMAIN>.<DOMAIN>
-cd bytegrader
-git pull origin main
-./deploy/deploy.sh
+curl https://<SUBDOMAIN>.<DOMAIN>/health
 ```
 
-TODO:
- - Test deploy update from repo (above)
- - App appears to be running...start test actual ByteGrader
+This should show `{"status":"ok"}`.
+
+## Update Process
+
+Once the server is running, you can update ByteGrader (with minimal downtime) by logging into the server as the *bytegrader* user, stopping the container, updating the repository, and then calling the *deploy.sh* script again. Don't forget to give the script the location of your *app* directory!
+
+```sh
+ssh bytegrader@esp32-iot.bytegrader.com
+cd ~/app
+docker compose down
+cd ~/bytegrader
+git pull
+./deploy/deploy.sh ~/app
+```
+
+Verify that the server is running with:
+
+```sh
+curl http://localhost:8080/health
+```

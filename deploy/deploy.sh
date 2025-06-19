@@ -34,8 +34,8 @@ if [ -f ~/.bytegrader_env ]; then
     echo "✅ Loaded environment variables"
     echo "📋 Course: $BYTEGRADER_COURSE_DOMAIN"
 else
-    echo "❌ Environment file not found"
-    echo "💡 Run server setup first: sudo ./deploy/server-setup.sh <domain> <subdomain> <email>"
+    echo "❌ Environment file not found: ~/.bytegrader_env"
+    echo "💡 Run server setup first: sudo ./deploy/setup-server.sh <domain> <subdomain> <email> [security_level]"
     exit 1
 fi
 
@@ -65,6 +65,21 @@ cp "$REPO_DIR/go.sum" .
 echo "📂 Copying and configuring deployment files..."
 # Set variables for envsubst (it expects different names than our env file)
 export COURSE_SUBDOMAIN="$BYTEGRADER_COURSE_SUBDOMAIN"
+
+# Export security settings for docker-compose
+export BYTEGRADER_REQUIRE_API_KEY
+export BYTEGRADER_VALID_API_KEYS
+export BYTEGRADER_ALLOWED_IPS
+export BYTEGRADER_MAX_FILE_SIZE_MB
+export BYTEGRADER_GRADING_TIMEOUT_MIN
+export BYTEGRADER_MAX_CONCURRENT_JOBS
+export BYTEGRADER_RATE_LIMIT_ENABLED
+export BYTEGRADER_RATE_LIMIT_REQUESTS
+export BYTEGRADER_RATE_LIMIT_WINDOW_MIN
+export BYTEGRADER_CLEANUP_INTERVAL_HOURS
+export BYTEGRADER_COMPLETED_JOB_TTL_HOURS
+export BYTEGRADER_FAILED_JOB_TTL_HOURS
+export BYTEGRADER_OLD_FILE_TTL_HOURS
 
 # Copy and process docker-compose.yml with environment variables
 envsubst < "$REPO_DIR/deploy/docker-compose.yml" > docker-compose.yml
@@ -108,12 +123,54 @@ sleep 15
 if docker compose ps | grep -q "Up"; then
     echo "✅ ByteGrader is running!"
     echo ""
+    
+    # Display security configuration summary
+    echo "🔐 Security Configuration:"
+    if [ "$BYTEGRADER_REQUIRE_API_KEY" = "true" ]; then
+        echo "   🔑 API Key: Required"
+    else
+        echo "   🔓 API Key: Not required"
+    fi
+    
+    if [ -n "$BYTEGRADER_ALLOWED_IPS" ]; then
+        echo "   🛡️  IP Whitelist: $BYTEGRADER_ALLOWED_IPS"
+    else
+        echo "   🌐 IP Access: Open (no restrictions)"
+    fi
+    echo ""
+    
     echo "🧪 Test locally:"
     echo "   curl http://localhost:8080/health"
+    
+    # Show appropriate test commands based on security level
+    if [ "$BYTEGRADER_REQUIRE_API_KEY" = "true" ]; then
+        FIRST_API_KEY="$BYTEGRADER_VALID_API_KEYS"
+        echo "   curl -H \"X-API-Key: $FIRST_API_KEY\" http://localhost:8080/queue"
+    else
+        echo "   curl http://localhost:8080/queue"
+    fi
     echo ""
+    
     echo "🌐 Test via domain (after DNS propagates):"
     echo "   curl http://$BYTEGRADER_COURSE_DOMAIN/health"
+    
+    if [ "$BYTEGRADER_REQUIRE_API_KEY" = "true" ]; then
+        echo "   curl -H \"X-API-Key: $FIRST_API_KEY\" https://$BYTEGRADER_COURSE_DOMAIN/queue"
+    else
+        echo "   curl https://$BYTEGRADER_COURSE_DOMAIN/queue"
+    fi
     echo ""
+    
+    if [ "$BYTEGRADER_REQUIRE_API_KEY" = "true" ]; then
+        echo "🔑 API Key:"
+        echo "   $BYTEGRADER_VALID_API_KEYS"
+        echo ""
+        echo "📝 API Usage Examples:"
+        echo "   Header: X-API-Key: $FIRST_API_KEY"
+        echo "   Bearer: Authorization: Bearer $FIRST_API_KEY"
+        echo ""
+    fi
+    
     echo "📊 Monitor:"
     echo "   cd $APP_DIR"
     echo "   docker compose ps           # Service status"
@@ -124,10 +181,13 @@ if docker compose ps | grep -q "Up"; then
     echo "   docker compose restart      # Restart services"
     echo "   docker compose down         # Stop services"
     echo ""
-    echo "📋 Next steps:"
-    echo "1. Test DNS: nslookup $BYTEGRADER_COURSE_DOMAIN"
-    echo "2. Enable HTTPS: sudo /root/setup_ssl.sh"
-    echo "3. Test HTTPS: curl https://$BYTEGRADER_COURSE_DOMAIN/health"
+    
+    if [ -z "$(docker compose ps -q)" ]; then
+        echo "📋 Next steps:"
+        echo "1. Test DNS: nslookup $BYTEGRADER_COURSE_DOMAIN"
+        echo "2. Enable HTTPS: sudo /root/setup_ssl.sh"
+        echo "3. Test HTTPS: curl https://$BYTEGRADER_COURSE_DOMAIN/health"
+    fi
     echo ""
     echo "📋 View logs:"
     echo "   docker compose logs -f"
@@ -146,5 +206,6 @@ else
     echo "1. Check if port 8080 is available: netstat -tulpn | grep :8080"
     echo "2. Check Docker status: docker ps -a"
     echo "3. Check system resources: df -h && free -h"
+    echo "4. Check environment variables: cat ~/.bytegrader_env"
     exit 1
 fi
