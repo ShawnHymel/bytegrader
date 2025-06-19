@@ -109,6 +109,12 @@ if [ -d "$REPO_DIR/graders" ]; then
     echo "✅ Copied grader scripts"
 fi
 
+# Copy registry file (ADD THIS)
+if [ -f "$REPO_DIR/graders/registry.yaml" ]; then
+    cp "$REPO_DIR/graders/registry.yaml" graders/
+    echo "✅ Copied registry.yaml"
+fi
+
 # Create other necessary directories
 mkdir -p uploads logs
 

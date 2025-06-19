@@ -6,10 +6,10 @@ services:
       - "127.0.0.1:8080:8080"
       
     volumes:
-      - ./graders:/usr/local/bin/graders:ro
       - ./uploads:/tmp/uploads
       - ./logs:/app/logs
       - /var/run/docker.sock:/var/run/docker.sock
+      - ./graders/registry.yaml:/usr/local/bin/graders/registry.yaml:ro
 
     user: "${DOCKER_USER_ID}:${DOCKER_GROUP_ID}"
     
