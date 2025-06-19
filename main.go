@@ -1,7 +1,6 @@
 package main
 
 import (
-    "bytes"
     "context"
     "encoding/base64"
     "encoding/json"
@@ -11,12 +10,10 @@ import (
     "net"
     "net/http"
     "os"
-    "os/exec"
     "path/filepath"
     "strconv"
     "strings"
     "sync"
-    "syscall"
     "time"
 
     "github.com/google/uuid"
