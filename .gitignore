@@ -1,0 +1,102 @@
+# ByteGrader specific
+*.zip
+*.tar.gz
+*.log
+
+# Build artifacts
+bytegrader-api
+dist/
+build/
+
+# Go build cache
+.gocache/
+
+# Runtime directories
+uploads/
+logs/
+results/
+temp/
+grading_*/
+
+# Environment and secrets
+.env
+.env.local
+*.env
+*_env
+.bytegrader_env
+
+# Docker artifacts
+docker-compose.override.yml
+docker-compose.prod.yml
+
+# Development and testing
+test-submissions/
+test-results/
+test.txt
+test.zip
+*.test
+coverage.out
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Desktop.ini
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.backup
+*.orig
+
+# Node.js (if you add any frontend tools)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Python cache (for grader scripts)
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Assignment-specific ignores
+graders/*/test-data/
+graders/*/submissions/
+graders/*/build/
+graders/*/output/
+
+# SSL certificates (if stored locally)
+*.pem
+*.key
+*.crt
+*.csr
+
+# Backup files
+*.sql
+*.dump
+*.backup
+
+# Large files that shouldn't be committed
+*.iso
+*.img
+*.bin
+firmware/
+toolchain/

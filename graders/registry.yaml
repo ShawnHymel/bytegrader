@@ -1,0 +1,6 @@
+assignments:
+  test-stub:
+    image: "bytegrader-test-stub:latest"
+    description: "Simple test grader that returns constant results"
+    timeout_minutes: 5
+    enabled: true

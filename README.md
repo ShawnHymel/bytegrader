@@ -29,13 +29,68 @@ While ByteGrader is optimized for embedded systems and hardware-centric courses,
 
 _Coming soon…_
 
+## Developing a Grader
+
+A *grader* is a combination of Docker image and Python grading script. Every time a student submits a file (usually a *.zip* file) to a particular assignment, the *API app* spins up a container from an image built for that assignment. Start with the *graders/test-stub* grader as a boilerplate template.
+
+Here is how you build and run the *test-stub* grader locally (with an example submission):
+
+```sh
+cd graders/test-stub/
+docker build -t bytegrader-test-stub .
+cd ../..
+docker run --rm -v "$(pwd)/test/submission-make-c-hello.zip:/submission/submission.zip:ro" -v "$(pwd)/test/results/:/results" bytegrader-test-stub
+```
+
+When you run the image, it will read in the *submission-make-c-hello.zip* file, rename to *submission.zip* in the container, process it with *grader.py*, and store the results in *test/results* as *output.json*. Note that *test-stub* does not actually build or run any submitted code. It simply verifies that the file is a *.zip* archive and returns a constant score and feedback.
+
 ## Notes
+
+### Check Logs
+
+Docker Compose keeps a running set of logs. You can view them by logging into the server, navigating to the *app/* directory, and running:
+
+```sh
+cd /home/bytegrader/app/
+docker compose logs
+```
+
+You can also watch logs in realtime with:
+
+```sh
+docker compose logs -f
+```
+
+### Check the Queue
+
+You can view the queue from an approved IP address and with the correct API key:
+
+curl -H "X-API-Key: <API_KEY>" https://<SUBDOMAIN>.<DOMAIN>/queue
+
+### Update Go Dependences
 
 To update Go dependencies (i.e. if you import a new package in *main.go* or want to update package listings in *go.mod* and *go.sum*), run the following:
 
 ```sh
 docker run --rm -v "$PWD":/app -w /app golang:1.24 go mod tidy
 ```
+
+### Update IP Whitelist
+
+If the server is already running and you'd like to update the white list (e.g. so you can add another client for testing), edit the environment variables:
+
+```sh
+nano /home/bytegrader/.bytegrader_env
+```
+
+Once you've added/removed the desired IP addresses, redploy (which will read in the saved environment variables from that file):
+
+```sh
+cd /home/bytegrader/bytegrader
+bash deploy/deploy.sh ../app
+```
+
+Note that if you need to get the "local" IP address (what the App container sees when making calls from the host server), as `127.0.0.1` and `localhost` won't often work, you can run `docker compose logs | grep "Security check"`.
 
 ## Todo
 

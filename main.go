@@ -22,6 +22,7 @@ import (
     "github.com/google/uuid"
     "github.com/testcontainers/testcontainers-go"
     "golang.org/x/time/rate"
+    "gopkg.in/yaml.v3"
 )
 
 //------------------------------------------------------------------------------
@@ -55,6 +56,19 @@ type Config struct {
     // Resource limits
     MaxConcurrentJobs   int           // Maximum concurrent grading jobs
     MaxQueueSize        int           // Maximum queued jobs
+}
+
+// Configuration for each assignment
+type AssignmentConfig struct {
+    Image           string `yaml:"image"`
+    Description     string `yaml:"description"`
+    TimeoutMinutes  int    `yaml:"timeout_minutes"`
+    Enabled         bool   `yaml:"enabled"`
+}
+
+// Configuration for the grader registry
+type GraderRegistry struct {
+    Assignments map[string]AssignmentConfig `yaml:"assignments"`
 }
 
 // Job represents a grading job
