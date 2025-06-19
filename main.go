@@ -41,7 +41,7 @@ type Config struct {
     OldFileTTL          time.Duration // hours
     QueueBufferSize     int
     UploadsDir          string
-    GradingScriptsDir   string        // Directory containing assignment-specific graders
+    GraderRegistryPath  string        // Path to grader registry file
 
     // Security configuration
     RequireAPIKey       bool          // Enable API key authentication
@@ -397,7 +397,7 @@ func loadConfig() *Config {
         OldFileTTL:          time.Duration(getEnvInt("OLD_FILE_TTL_HOURS", 48)) * time.Hour,
         QueueBufferSize:     getEnvInt("QUEUE_BUFFER_SIZE", 100),
         UploadsDir:          getEnv("UPLOADS_DIR", "/tmp/uploads"),
-        GradingScriptsDir:   getEnv("GRADING_SCRIPTS_DIR", "/usr/local/bin/graders"),
+        GraderRegistryPath: getEnv("GRADER_REGISTRY_PATH", "/usr/local/bin/graders/registry.yaml"),
         
         // Security configuration
         RequireAPIKey:       getEnvBool("REQUIRE_API_KEY", false),
@@ -635,21 +635,6 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
     json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
 }
 
-// Get the appropriate grading script for an assignment
-func getGradingScript(assignmentID string) (string, error) {
-
-	// Assignment-specific script is required
-	assignmentScript := filepath.Join(config.GradingScriptsDir, fmt.Sprintf("%s.py", assignmentID))
-	
-	// Check if assignment-specific script exists
-	if _, err := os.Stat(assignmentScript); err == nil {
-		return assignmentScript, nil
-	}
-	
-	// No fallback - assignment script must exist
-	return "", fmt.Errorf("grading script not found for assignment '%s' (expected: %s)", assignmentID, assignmentScript)
-}
-
 // Return current configuration (for debugging/monitoring)
 func configHandler(w http.ResponseWriter, r *http.Request) {
     w.Header().Set("Content-Type", "application/json")
@@ -663,7 +648,7 @@ func configHandler(w http.ResponseWriter, r *http.Request) {
         "old_file_ttl_hours":      int(config.OldFileTTL.Hours()),
         "queue_buffer_size":       config.QueueBufferSize,
         "uploads_dir":             config.UploadsDir,
-        "grading_scripts_dir":     config.GradingScriptsDir,
+        "grader_registry_path":    config.GraderRegistryPath,
         "require_api_key":         config.RequireAPIKey,
         "ip_whitelist_enabled":    len(config.AllowedIPs) > 0,
         "allowed_ips_count":       len(config.AllowedIPs),
@@ -813,6 +798,45 @@ func (q *JobQueue) copyFile(src, dst string) error {
 
     _, err = io.Copy(destFile, sourceFile)
     return err
+}
+
+// Load grader registry from YAML file
+func loadGraderRegistry() (*GraderRegistry, error) {
+    data, err := os.ReadFile(config.GraderRegistryPath)
+    if err != nil {
+        return nil, fmt.Errorf("failed to read registry file: %v", err)
+    }
+    
+    var registry GraderRegistry
+    err = yaml.Unmarshal(data, &registry)
+    if err != nil {
+        return nil, fmt.Errorf("failed to parse registry YAML: %v", err)
+    }
+    
+    return &registry, nil
+}
+
+// Get assignment configuration and validate
+func getAssignmentConfig(assignmentID string) (*AssignmentConfig, error) {
+
+    // Load the grader registry
+    registry, err := loadGraderRegistry()
+    if err != nil {
+        return nil, err
+    }
+    
+    // Check if assignment exists in the registry
+    assignment, exists := registry.Assignments[assignmentID]
+    if !exists {
+        return nil, fmt.Errorf("assignment '%s' not found in registry", assignmentID)
+    }
+    
+    // Validate assignment configuration
+    if !assignment.Enabled {
+        return nil, fmt.Errorf("assignment '%s' is disabled", assignmentID)
+    }
+    
+    return &assignment, nil
 }
 
 // Execute the Python grading script
@@ -1106,7 +1130,10 @@ func isValidAssignmentID(assignmentID string) bool {
         }
     }
     
-    return true
+    // Check if assignment exists and is enabled in registry
+    _, err := getAssignmentConfig(assignmentID)
+
+    return err == nil
 }
 
 //------------------------------------------------------------------------------
@@ -1131,7 +1158,7 @@ func main() {
     fmt.Printf("   Uploads directory: %s\n", config.UploadsDir)
     fmt.Printf("   Max concurrent jobs: %d\n", config.MaxConcurrentJobs)
     fmt.Printf("   Max Queue Size: %d\n", config.MaxQueueSize)
-	fmt.Printf("   Grading scripts directory: %s\n", config.GradingScriptsDir)
+	fmt.Printf("   Grading registry path: %s\n", config.GradingRegistryPath)
     fmt.Printf("   Uploads Directory: %s (files will be stored here)\n", config.UploadsDir)
     fmt.Println("")
 
@@ -1247,21 +1274,23 @@ func main() {
     fmt.Println("   GET  /health - Health check (no auth required)")
     fmt.Println("")
 
-    // List grader scripts and print assignment IDs
-    fmt.Println("📂 Grading scripts:")
-    files, err := os.ReadDir(config.GradingScriptsDir)
+    // List available assignments from registry
+    fmt.Println("📂 Available assignments:")
+    registry, err := loadGraderRegistry()
     if err != nil {
-        fmt.Printf("   ❌ Error reading grading scripts directory: %v\n", err)
+        fmt.Printf("   ❌ Error reading grader registry: %v\n", err)
+        fmt.Printf("   Expected registry file: %s\n", config.GraderRegistryPath)
     } else {
-        if len(files) == 0 {
-            fmt.Println("  ❌ No grading scripts found. Please add scripts to:", config.GradingScriptsDir)
+        if len(registry.Assignments) == 0 {
+            fmt.Println("   ❌ No assignments found in registry")
         } else {
-            fmt.Println("   Use one of the following assignment IDs (e.g. '?assignment=<ID>') for grading:")
-            for _, file := range files {
-                if !file.IsDir() && strings.HasSuffix(file.Name(), ".py") {
-                    assignmentID := strings.TrimSuffix(file.Name(), ".py")
-                    fmt.Printf("     - %s\n", assignmentID)
+            fmt.Println("   Use one of the following assignment IDs:")
+            for assignmentID, assignment := range registry.Assignments {
+                status := "✅ enabled"
+                if !assignment.Enabled {
+                    status = "❌ disabled"
                 }
+                fmt.Printf("     - %s (%s) -> %s\n", assignmentID, status, assignment.Image)
             }
         }
     }
