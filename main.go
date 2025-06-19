@@ -115,7 +115,6 @@ var (
     config           *Config
     jobQueue         *JobQueue
     rateLimitManager *RateLimitManager
-    dockerClient     *client.Client
 )
 
 //------------------------------------------------------------------------------
