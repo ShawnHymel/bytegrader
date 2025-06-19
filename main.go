@@ -19,10 +19,8 @@ import (
     "syscall"
     "time"
 
-    "github.com/docker/docker/api/types"
-    "github.com/docker/docker/api/types/container"
-    "github.com/docker/docker/client"
     "github.com/google/uuid"
+    "github.com/testcontainers/testcontainers-go"
     "golang.org/x/time/rate"
 )
 
@@ -1124,20 +1122,20 @@ func main() {
     fmt.Printf("   Uploads Directory: %s (files will be stored here)\n", config.UploadsDir)
     fmt.Println("")
 
-    // Initialize Docker client
-    var err error
-    dockerClient, err = client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+    // Test Docker availability using testcontainers
+    ctx := context.Background()
+    provider, err := testcontainers.NewDockerProvider()
     if err != nil {
-        log.Fatalf("❌ Failed to create Docker client: %v", err)
+        log.Fatalf("❌ Failed to create Docker provider: %v", err)
     }
-    defer dockerClient.Close()
-    
-    // Test Docker connection
-    info, err := dockerClient.Info(context.Background())
+    defer provider.Close()
+
+    // Check if Docker is running and accessible
+    info, err := provider.DaemonHost(ctx)
     if err != nil {
         log.Fatalf("❌ Failed to connect to Docker: %v", err)
     }
-    fmt.Printf("🐳 Connected to Docker: %s\n", info.ServerVersion)
+    fmt.Printf("🐳 Connected to Docker: %s\n", info)
     
     // Print security configuration
     fmt.Printf("🔐 Security configuration:\n")
