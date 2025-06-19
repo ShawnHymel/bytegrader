@@ -101,7 +101,7 @@ Log back in as **root** (or enter `logout` to escape out of the `su - bytegrader
 
 ```sh
 cd /home/bytegrader/bytegrader/
-./deploy/server-setup.sh <DOMAIN> <SUBDOMAIN> <EMAIL>
+bash deploy/server-setup.sh <DOMAIN> <SUBDOMAIN> <EMAIL>
 ```
 
 ## Deploy ByteGrader Server App
@@ -112,8 +112,33 @@ Log in as the **bytegrader**, make an *app/* directory, and run the deploy app. 
 cd /home/bytegrader/
 mkdir -p app/
 cd bytegrader/
-./deploy/deploy.sh /home/bytegrader/app/
+bash deploy/deploy.sh /home/bytegrader/app/
 ```
+
+Once that runs, you can check to make sure that the grader container is reachable locally:
+
+```sh
+curl http://localhost:8080/health
+```
+
+This should show `{"status":"ok"}`.
+
+Then, you can check to make sure that you can lookup your subdomain's IP address with:
+
+```sh
+nslookup <SUBDOMAIN>.<DOMAIN>
+```
+
+You can't make any requests yet, as you need to enable SSL.
+
+## Enable SSL
+
+During the setup process, we copied the *deploy/setup-ssl.sh* script to the */root/* directory, which we need to run. We needed to wait until now to run it, as we only just set up our domain and subdomain with the *deploy.sh* script.
+
+Even though our app is running, we need to generate SSL certificates and get them signed (through Let's Encrypt). It also sets up *certbot* to renew certificates automatically. 
+
+
+
 
 
 ## How to Deploy the ByteGrader Server App

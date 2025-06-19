@@ -116,19 +116,6 @@ echo "🌐 Starting nginx..."
 systemctl enable nginx
 systemctl restart nginx
 
-echo "🔧 Setting up SSL preparation script..."
-# Check if SSL template exists
-if [ -f "deploy/setup-ssl.sh" ]; then
-    sed -e "s/\${MAIN_DOMAIN}/$MAIN_DOMAIN/g" \
-        -e "s/\${COURSE_DOMAIN}/$COURSE_DOMAIN/g" \
-        -e "s/\${EMAIL}/$EMAIL/g" \
-        deploy/setup-ssl.sh > /root/setup_ssl.sh
-    chmod +x /root/setup_ssl.sh
-    echo "✅ SSL setup script created at /root/setup_ssl.sh"
-else
-    echo "⚠️  SSL template not found, you'll need to configure SSL manually"
-fi
-
 echo "✅ Server setup complete!"
 echo ""
 echo "📋 Configuration:"
@@ -144,4 +131,4 @@ echo ""
 echo "📋 Then deploy application:"
 echo "   exit                     # Back to $BYTEGRADER_USER user"
 echo "   ./deploy/deploy.sh       # Deploy application"
-echo "   sudo /root/setup_ssl.sh  # Enable HTTPS (after DNS propagates)"
+echo "   sudo ./deploy/setup-ssl.sh        # Enable HTTPS (after DNS propagates)"
