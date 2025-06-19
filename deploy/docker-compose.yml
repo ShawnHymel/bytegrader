@@ -4,11 +4,14 @@ services:
     container_name: bytegrader-${COURSE_SUBDOMAIN}
     ports:
       - "127.0.0.1:8080:8080"
+      
     volumes:
       - ./graders:/usr/local/bin/graders:ro
       - ./uploads:/tmp/uploads
       - ./logs:/app/logs
       - /var/run/docker.sock:/var/run/docker.sock
+
+    user: "${DOCKER_USER_ID}:${DOCKER_GROUP_ID}"
     
     environment:
       # Course-specific settings
