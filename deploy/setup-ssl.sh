@@ -116,12 +116,7 @@ server {
     add_header X-XSS-Protection "1; mode=block";
     add_header Strict-Transport-Security "max-age=63072000; includeSubDomains; preload";
     
-    # Rate limiting
-    limit_req_zone \$binary_remote_addr zone=api:10m rate=15r/m;
-    
     location / {
-        limit_req zone=api burst=10 nodelay;
-        
         proxy_pass http://localhost:8080;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
@@ -135,7 +130,6 @@ server {
     }
     
     location /health {
-        limit_req off;
         proxy_pass http://localhost:8080/health;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;

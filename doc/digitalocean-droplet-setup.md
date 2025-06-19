@@ -101,12 +101,12 @@ Log back in as **root** (or enter `logout` to escape out of the `su - bytegrader
 
 ```sh
 cd /home/bytegrader/bytegrader/
-bash deploy/server-setup.sh <DOMAIN> <SUBDOMAIN> <EMAIL>
+bash deploy/setup-server.sh <DOMAIN> <SUBDOMAIN> <EMAIL>
 ```
 
 ## Deploy ByteGrader Server App
 
-Log in as the **bytegrader**, make an *app/* directory, and run the deploy app. The *deploy.sh* script will copy the relevant files from the repo to the *app/* directory.
+Log in as the **bytegrader** user, make an *app/* directory, and run the deploy app. The *deploy.sh* script will copy the relevant files from the repo to the *app/* directory.
 
 ```sh
 cd /home/bytegrader/
@@ -133,11 +133,14 @@ You can't make any requests yet, as you need to enable SSL.
 
 ## Enable SSL
 
-During the setup process, we copied the *deploy/setup-ssl.sh* script to the */root/* directory, which we need to run. We needed to wait until now to run it, as we only just set up our domain and subdomain with the *deploy.sh* script.
+Even though our app is running, we need to generate SSL certificates and get them signed (through Let's Encrypt). It also sets up *certbot* to renew certificates automatically. We needed to wait until now to run *setup-ssl.sh*, as we only just set up our domain and subdomain with the *deploy.sh* script.
 
-Even though our app is running, we need to generate SSL certificates and get them signed (through Let's Encrypt). It also sets up *certbot* to renew certificates automatically. 
+Switch to the **root** user (`logout` or re-login via SSH) and run the *setup-ssl.sh* script:
 
-
+```sh
+cd /home/bytegrader/bytegrader
+bash deploy/setup-ssl.sh
+```
 
 
 
