@@ -8,7 +8,7 @@ services:
       - ./graders:/usr/local/bin/graders:ro
       - ./uploads:/tmp/uploads
       - ./logs:/app/logs
-      - docker run --rm -v "$PWD":/app -w /app golang:1.24 go mod tidy
+      - /var/run/docker.sock:/var/run/docker.sock
     
     environment:
       # Course-specific settings
