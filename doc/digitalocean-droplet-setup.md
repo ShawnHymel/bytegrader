@@ -190,3 +190,10 @@ You should receive a "File submitted for grading" JSON message back from the ser
 ```sh
 curl -H "X-API-Key: <API_KEY>" https://<SUBDOMAIN>.<DOMAIN>/status/<JOB_ID>
 ```
+
+You can watch the real-time logs of the server with:
+
+```sh
+cd /home/bytegrader/app
+docker compose logs -f
+```
