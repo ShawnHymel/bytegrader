@@ -842,73 +842,10 @@ func getAssignmentConfig(assignmentID string) (*AssignmentConfig, error) {
 // Execute the Python grading script
 func (q *JobQueue) runPythonGrader(tempDir, submissionPath, originalFilename string) *JobResult {
     
-	// Find the job to get assignment ID
-    var job *Job
-    q.mutex.RLock()
-    for _, j := range q.jobs {
-        if j.FilePath != "" && strings.Contains(submissionPath, j.ID) {
-            job = j
-            break
-        }
+	// TODO: Replace this entire function with container spawning
+    return &JobResult{
+        Error: "Container grading not yet implemented - coming soon!",
     }
-    q.mutex.RUnlock()
-    
-    if job == nil {
-        return &JobResult{Error: "Job not found for grading"}
-    }
-    
-    // Get the appropriate grading script for this assignment (required)
-    gradingScript, err := getGradingScript(job.AssignmentID)
-    if err != nil {
-        return &JobResult{Error: err.Error()}
-    }
-    
-    // Set up context with configured timeout
-    ctx, cancel := context.WithTimeout(context.Background(), config.GradingTimeout)
-    defer cancel()
-
-    // Create the grading command using assignment-specific script
-    cmd := exec.CommandContext(ctx, "python3", gradingScript, 
-        submissionPath, originalFilename, tempDir)
-    
-    // Set working directory
-    cmd.Dir = tempDir
-    
-    // Set up process isolation
-    cmd.SysProcAttr = &syscall.SysProcAttr{
-        Setpgid: true, // New process group for clean termination
-    }
-
-    // Capture output
-    var stdout, stderr bytes.Buffer
-    cmd.Stdout = &stdout
-    cmd.Stderr = &stderr
-
-    // Start the grading process
-    fmt.Printf("⚡ Running Python grader: python3 %s %s (assignment: %s, timeout: %v)\n", 
-        gradingScript, originalFilename, job.AssignmentID, config.GradingTimeout)
-    
-    // Execute grading
-    err = cmd.Run()
-    
-    // Handle timeout
-    if ctx.Err() == context.DeadlineExceeded {
-        // Kill the entire process group
-        syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-        return &JobResult{
-            Error: fmt.Sprintf("Grading timeout - submission took longer than %v to grade", config.GradingTimeout),
-        }
-    }
-
-    // Handle other errors
-    if err != nil {
-        return &JobResult{
-            Error: fmt.Sprintf("Grading script failed: %s\nStderr: %s", err.Error(), stderr.String()),
-        }
-    }
-
-    // Parse grading output (expects JSON from Python script)
-    return q.parseGradingOutput(stdout.String(), stderr.String())
 }
 
 // Convert Python script JSON output to JobResult
