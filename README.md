@@ -29,6 +29,14 @@ While ByteGrader is optimized for embedded systems and hardware-centric courses,
 
 _Coming soon…_
 
+## Notes
+
+To update Go dependencies (i.e. if you import a new package in *main.go* or want to update package listings in *go.mod* and *go.sum*), run the following:
+
+```sh
+docker run --rm -v "$PWD":/app -w /app golang:1.24 go mod tidy
+```
+
 ## Todo
 
  * Create Arduino example

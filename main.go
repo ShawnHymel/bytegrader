@@ -19,6 +19,9 @@ import (
     "syscall"
     "time"
 
+    "github.com/docker/docker/api/types"
+    "github.com/docker/docker/api/types/container"
+    "github.com/docker/docker/client"
     "github.com/google/uuid"
     "golang.org/x/time/rate"
 )
@@ -114,6 +117,7 @@ var (
     config           *Config
     jobQueue         *JobQueue
     rateLimitManager *RateLimitManager
+    dockerClient     *client.Client
 )
 
 //------------------------------------------------------------------------------
@@ -1119,6 +1123,21 @@ func main() {
 	fmt.Printf("   Grading scripts directory: %s\n", config.GradingScriptsDir)
     fmt.Printf("   Uploads Directory: %s (files will be stored here)\n", config.UploadsDir)
     fmt.Println("")
+
+    // Initialize Docker client
+    var err error
+    dockerClient, err = client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+    if err != nil {
+        log.Fatalf("❌ Failed to create Docker client: %v", err)
+    }
+    defer dockerClient.Close()
+    
+    // Test Docker connection
+    info, err := dockerClient.Info(context.Background())
+    if err != nil {
+        log.Fatalf("❌ Failed to connect to Docker: %v", err)
+    }
+    fmt.Printf("🐳 Connected to Docker: %s\n", info.ServerVersion)
     
     // Print security configuration
     fmt.Printf("🔐 Security configuration:\n")
