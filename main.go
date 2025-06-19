@@ -1158,7 +1158,7 @@ func main() {
     fmt.Printf("   Uploads directory: %s\n", config.UploadsDir)
     fmt.Printf("   Max concurrent jobs: %d\n", config.MaxConcurrentJobs)
     fmt.Printf("   Max Queue Size: %d\n", config.MaxQueueSize)
-	fmt.Printf("   Grading registry path: %s\n", config.GradingRegistryPath)
+	fmt.Printf("   Grading registry path: %s\n", config.GraderRegistryPath)
     fmt.Printf("   Uploads Directory: %s (files will be stored here)\n", config.UploadsDir)
     fmt.Println("")
 
