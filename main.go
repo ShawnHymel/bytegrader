@@ -843,177 +843,6 @@ func getAssignmentConfig(assignmentID string) (*AssignmentConfig, error) {
     return &assignment, nil
 }
 
-// Execute grading using a Docker container with volumes  
-func (q *JobQueue) runContainerGrader(job *Job, tempDir string) *JobResult {
-
-    // Get assignment configuration from registry
-    assignmentConfig, err := getAssignmentConfig(job.AssignmentID)
-    if err != nil {
-        return &JobResult{Error: fmt.Sprintf("Assignment configuration error: %v", err)}
-    }
-    
-    fmt.Printf("🐳 Starting container grading with image: %s\n", assignmentConfig.Image)
-    
-    // Create job-specific directory in the shared workspace
-    jobWorkDir := filepath.Join("/tmp/grading-volumes", job.ID)
-    submissionDir := filepath.Join(jobWorkDir, "submission")
-    resultsDir := filepath.Join(jobWorkDir, "results")
-    
-    // Create directories
-    err = os.MkdirAll(submissionDir, 0755)
-    if err != nil {
-        return &JobResult{Error: fmt.Sprintf("Failed to create submission directory: %v", err)}
-    }
-    err = os.MkdirAll(resultsDir, 0755)
-    if err != nil {
-        return &JobResult{Error: fmt.Sprintf("Failed to create results directory: %v", err)}
-    }
-    defer os.RemoveAll(jobWorkDir) // Cleanup
-    
-    // Copy submission file to the submission directory
-    submissionPath := filepath.Join(submissionDir, "submission.zip")
-    err = q.copyFile(job.FilePath, submissionPath)
-    if err != nil {
-        return &JobResult{Error: fmt.Sprintf("Failed to copy submission: %v", err)}
-    }
-    
-    fmt.Printf("📁 Submission ready at: %s\n", submissionPath)
-    
-    // Set up timeout context
-    timeout := time.Duration(assignmentConfig.TimeoutMinutes) * time.Minute
-    if timeout == 0 {
-        timeout = config.GradingTimeout
-    }
-    ctx, cancel := context.WithTimeout(context.Background(), timeout)
-    defer cancel()
-    
-    // Create and run grader container with bind mounts to our directories
-    req := testcontainers.ContainerRequest{
-        Image: assignmentConfig.Image,
-        Mounts: testcontainers.Mounts(
-            testcontainers.BindMount(submissionDir, "/submission"),
-            testcontainers.BindMount(resultsDir, "/results"),
-        ),
-        AutoRemove: true,
-    }
-    
-    // Set resource limits if configured
-    fmt.Printf("🚀 Launching grading container for job %s...\n", job.ID)
-    gradingContainer, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
-        ContainerRequest: req,
-        Started:         true,
-    })
-    if err != nil {
-        return &JobResult{Error: fmt.Sprintf("Failed to start grading container: %v", err)}
-    }
-    defer gradingContainer.Terminate(ctx)
-    
-    // Wait for container to complete
-    fmt.Printf("⏳ Waiting for grading to complete (timeout: %v)...\n", timeout)
-    time.Sleep(10 * time.Second) // Give it time to run
-    
-    // Read results directly from the results directory
-    return q.readGradingResults(resultsDir)
-}
-
-// Read grading results from the results directory
-func (q *JobQueue) readGradingResults(resultsDir string) *JobResult {
-
-    // Construct the path to the results file
-    resultFile := filepath.Join(resultsDir, "output.json")
-    
-    // Check if results file exists
-    if _, err := os.Stat(resultFile); os.IsNotExist(err) {
-        return &JobResult{Error: "Grading container did not produce results file"}
-    }
-    
-    // Read results
-    data, err := os.ReadFile(resultFile)
-    if err != nil {
-        return &JobResult{Error: fmt.Sprintf("Failed to read results: %v", err)}
-    }
-    
-    // Parse JSON results
-    var result JobResult
-    err = json.Unmarshal(data, &result)
-    if err != nil {
-        return &JobResult{Error: fmt.Sprintf("Invalid results JSON: %v", err)}
-    }
-    
-    // Print final score
-    fmt.Printf("✅ Container grading complete: Score %.1f\n", result.Score)
-    
-    return &result
-}
-
-// // Convert Python script JSON output to JobResult
-// func (q *JobQueue) parseGradingOutput(stdout, stderr string) *JobResult {
-//     fmt.Printf("🔍 Debug - Python stdout: %s\n", stdout)
-//     fmt.Printf("🔍 Debug - Python stderr: %s\n", stderr)
-    
-//     // Try to parse JSON output from Python script
-//     var gradingResult struct {
-//         Score       float64 `json:"score"`
-//         MaxScore    float64 `json:"max_score"`
-//         Feedback    string  `json:"feedback"`
-//         TestResults []struct {
-//             Name    string  `json:"name"`
-//             Passed  bool    `json:"passed"`
-//             Message string  `json:"message"`
-//             Points  float64 `json:"points"`
-//         } `json:"test_results"`
-//         Error string `json:"error"`
-//     }
-    
-//     // Clean up stdout and try to find JSON
-//     stdout = strings.TrimSpace(stdout)
-    
-//     // Try to parse the entire stdout as JSON first
-//     err := json.Unmarshal([]byte(stdout), &gradingResult)
-//     if err == nil {
-//         fmt.Printf("✅ Successfully parsed JSON directly\n")
-//         if gradingResult.Error != "" {
-//             return &JobResult{Error: gradingResult.Error}
-//         }
-        
-//         return &JobResult{
-//             Score:    gradingResult.Score,
-//             Feedback: gradingResult.Feedback,
-//         }
-//     }
-    
-//     // If parsing the entire stdout fails, log the error
-//     fmt.Printf("❌ Failed to parse stdout as JSON directly: %v\n", err)
-    
-//     // Split stdout into lines and try to find valid JSON
-//     lines := strings.Split(stdout, "\n")
-//     for i, line := range lines {
-//         line = strings.TrimSpace(line)
-//         if strings.HasPrefix(line, "{") && strings.HasSuffix(line, "}") {
-//             fmt.Printf("🔍 Trying to parse line %d: %s\n", i, line)
-//             err := json.Unmarshal([]byte(line), &gradingResult)
-//             if err == nil {
-//                 fmt.Printf("✅ Successfully parsed JSON from line %d\n", i)
-//                 if gradingResult.Error != "" {
-//                     return &JobResult{Error: gradingResult.Error}
-//                 }
-                
-//                 return &JobResult{
-//                     Score:    gradingResult.Score,
-//                     Feedback: gradingResult.Feedback,
-//                 }
-//             } else {
-//                 fmt.Printf("❌ Failed to parse line %d: %v\n", i, err)
-//             }
-//         }
-//     }
-    
-//     // Fallback: if no valid JSON found, return error with output
-//     return &JobResult{
-//         Error: fmt.Sprintf("Python grader did not return valid JSON.\nStdout: %s\nStderr: %s", stdout, stderr),
-//     }
-// }
-
 // Remove a file and log the action
 func (q *JobQueue) cleanupFile(filePath, jobID, reason string) {
     if filePath == "" {
@@ -1088,6 +917,111 @@ func (q *JobQueue) performCleanup() {
     }
     
     fmt.Printf("🧹 Cleanup complete: %d files removed, %d jobs removed\n", cleanedFiles, cleanedJobs)
+}
+
+//------------------------------------------------------------------------------
+// Container Grading Functions
+
+// Execute grading using a Docker container with volumes (simplified)
+func (q *JobQueue) runContainerGrader(job *Job, tempDir string) *JobResult {
+    
+    // Get assignment configuration from registry
+    assignmentConfig, err := getAssignmentConfig(job.AssignmentID)
+    if err != nil {
+        return &JobResult{Error: fmt.Sprintf("Assignment configuration error: %v", err)}
+    }
+    
+    fmt.Printf("🐳 Starting container grading with image: %s\n", assignmentConfig.Image)
+    
+    // Create unique volume name for this job
+    volumeName := fmt.Sprintf("bytegrader-job-%s", job.ID)
+    
+    // Set up timeout context
+    timeout := time.Duration(assignmentConfig.TimeoutMinutes) * time.Duration(time.Minute)
+    if timeout == 0 {
+        timeout = config.GradingTimeout
+    }
+    ctx, cancel := context.WithTimeout(context.Background(), timeout)
+    defer cancel()
+    
+    // Run grader container with BOTH bind mount (for input) and volume mount (for output)
+    req := testcontainers.ContainerRequest{
+        Image: assignmentConfig.Image,
+        Mounts: testcontainers.Mounts(
+            // Bind mount: submission file (read-only)
+            testcontainers.BindMount(job.FilePath, "/submission/submission.zip"),
+            // Volume mount: results directory (read-write, isolated)
+            testcontainers.VolumeMount(volumeName, "/results"),
+        ),
+        // The grader writes to /results/output.json
+        AutoRemove: true,
+    }
+    
+    fmt.Printf("🚀 Launching grading container for job %s...\n", job.ID)
+    
+    container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+        ContainerRequest: req,
+        Started:         true,
+    })
+    if err != nil {
+        return &JobResult{Error: fmt.Sprintf("Failed to start grader: %v", err)}
+    }
+    defer container.Terminate(ctx)
+    defer q.cleanupVolume(ctx, volumeName)
+    
+    // Wait for completion
+    fmt.Printf("⏳ Waiting for grading (timeout: %v)...\n", timeout)
+    time.Sleep(10 * time.Second)
+    
+    // Read results from volume
+    return q.readResultsFromVolume(ctx, volumeName)
+}
+
+// Read results from the job volume (simplified)
+func (q *JobQueue) readResultsFromVolume(ctx context.Context, volumeName string) *JobResult {
+    req := testcontainers.ContainerRequest{
+        Image: "alpine:latest",
+        Cmd:   []string{"cat", "/results/output.json"},
+        Mounts: testcontainers.Mounts(
+            testcontainers.VolumeMount(volumeName, "/results"),
+        ),
+        AutoRemove: true,
+    }
+    
+    container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+        ContainerRequest: req,
+        Started:         true,
+    })
+    if err != nil {
+        return &JobResult{Error: fmt.Sprintf("Failed to read results: %v", err)}
+    }
+    defer container.Terminate(ctx)
+    
+    time.Sleep(1 * time.Second)
+    logs, err := container.Logs(ctx)
+    if err != nil {
+        return &JobResult{Error: fmt.Sprintf("Failed to get results: %v", err)}
+    }
+    defer logs.Close()
+    
+    resultData, err := io.ReadAll(logs)
+    if err != nil {
+        return &JobResult{Error: fmt.Sprintf("Failed to read result data: %v", err)}
+    }
+    
+    var result JobResult
+    err = json.Unmarshal(resultData, &result)
+    if err != nil {
+        return &JobResult{Error: fmt.Sprintf("Invalid results JSON: %s", string(resultData))}
+    }
+    
+    fmt.Printf("✅ Container grading complete: Score %.1f\n", result.Score)
+    return &result
+}
+
+func (q *JobQueue) cleanupVolume(ctx context.Context, volumeName string) {
+    fmt.Printf("🗑️  Volume %s marked for cleanup\n", volumeName)
+    // Docker will clean up unused volumes automatically
 }
 
 //------------------------------------------------------------------------------
