@@ -61,6 +61,13 @@ type AssignmentConfig struct {
     Description     string `yaml:"description"`
     TimeoutMinutes  int    `yaml:"timeout_minutes"`
     Enabled         bool   `yaml:"enabled"`
+    Resources       ResourceConfig `yaml:"resources,omitempty"`
+}
+
+type ResourceConfig struct {
+    MemoryMB       int     `yaml:"memory_mb,omitempty"`
+    CPULimit       float64 `yaml:"cpu_limit,omitempty"`  // CPU cores (e.g., 0.5 = 50%)
+    PidsLimit      int     `yaml:"pids_limit,omitempty"` // Max processes
 }
 
 // Configuration for the grader registry
@@ -775,8 +782,8 @@ func (q *JobQueue) processJob(jobID string) *JobResult {
         return &JobResult{Error: "Failed to copy submission for grading"}
     }
 
-    // Run Python grading script with timeout
-    return q.runPythonGrader(tempDir, submissionPath, job.Filename)
+    // Run Python grading script in a container
+    return q.runContainerGrader(tempDir, submissionPath, job.Filename)
 }
 
 // Copy a file from src to dst
@@ -836,82 +843,225 @@ func getAssignmentConfig(assignmentID string) (*AssignmentConfig, error) {
     return &assignment, nil
 }
 
-// Execute the Python grading script
-func (q *JobQueue) runPythonGrader(tempDir, submissionPath, originalFilename string) *JobResult {
-    
-	// TODO: Replace this entire function with container spawning
-    return &JobResult{
-        Error: "Container grading not yet implemented - coming soon!",
+// Execute grading using a Docker container
+func (q *JobQueue) runContainerGrader(tempDir, submissionPath, originalFilename string) *JobResult {
+
+    // Find the job to get assignment ID
+    var job *Job
+    q.mutex.RLock()
+    for _, j := range q.jobs {
+        if j.FilePath != "" && strings.Contains(submissionPath, j.ID) {
+            job = j
+            break
+        }
     }
+    q.mutex.RUnlock()
+    
+    if job == nil {
+        return &JobResult{Error: "Job not found for grading"}
+    }
+    
+    // Get assignment configuration from registry
+    assignmentConfig, err := getAssignmentConfig(job.AssignmentID)
+    if err != nil {
+        return &JobResult{Error: fmt.Sprintf("Assignment configuration error: %v", err)}
+    }
+    
+    fmt.Printf("🐳 Starting container grading with image: %s\n", assignmentConfig.Image)
+    
+    // Create result directory
+    resultDir := fmt.Sprintf("%s/results", tempDir)
+    err = os.MkdirAll(resultDir, 0755)
+    if err != nil {
+        return &JobResult{Error: "Failed to create result directory"}
+    }
+    
+    // Set up timeout context
+    timeout := time.Duration(assignmentConfig.TimeoutMinutes) * time.Minute
+    if timeout == 0 {
+        timeout = config.GradingTimeout // fallback to global timeout
+    }
+    ctx, cancel := context.WithTimeout(context.Background(), timeout)
+    defer cancel()
+    
+    // Set up resource limits from assignment config
+    memoryLimit := int64(512 * 1024 * 1024) // Default 512MB
+    cpuQuota := int64(0)                     // Default no limit
+    pidsLimit := int64(100)                  // Default 100 processes
+
+    // Apply assignment-specific resource limits
+    if assignmentConfig.Resources.MemoryMB > 0 {
+        memoryLimit = int64(assignmentConfig.Resources.MemoryMB) * 1024 * 1024
+    }
+    if assignmentConfig.Resources.CPULimit > 0 {
+        // Convert CPU limit (cores) to quota (microseconds per 100ms period)
+        cpuQuota = int64(assignmentConfig.Resources.CPULimit * 100000)
+    }
+    if assignmentConfig.Resources.PidsLimit > 0 {
+        pidsLimit = int64(assignmentConfig.Resources.PidsLimit)
+    }
+    fmt.Printf("🔧 Resource limits: %dMB RAM, %.2f CPU cores, %d processes\n", 
+        memoryLimit/(1024*1024), float64(cpuQuota)/100000, pidsLimit)
+
+    // Create container request
+    req := testcontainers.ContainerRequest{
+        Image: assignmentConfig.Image,
+        Mounts: testcontainers.Mounts(
+            testcontainers.BindMount(submissionPath, "/submission/submission.zip"),
+            testcontainers.BindMount(resultDir, "/results"),
+        ),
+        AutoRemove: true,
+        Resources: container.Resources{
+            Memory:    memoryLimit,
+            CPUQuota:  cpuQuota,
+            CPUPeriod: 100000, // 100ms period (standard)
+            PidsLimit: pidsLimit,
+        },
+    }
+    
+    // Start container
+    fmt.Printf("🚀 Launching grading container for job %s...\n", job.ID)
+    gradingContainer, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+        ContainerRequest: req,
+        Started:         true,
+    })
+    if err != nil {
+        return &JobResult{Error: fmt.Sprintf("Failed to start grading container: %v", err)}
+    }
+    defer gradingContainer.Terminate(ctx)
+    
+    // Wait for container to complete
+    fmt.Printf("⏳ Waiting for grading to complete (timeout: %v)...\n", timeout)
+    
+    // Get container logs for debugging
+    logs, err := gradingContainer.Logs(ctx)
+    if err != nil {
+        fmt.Printf("⚠️  Could not get container logs: %v\n", err)
+    } else {
+        defer logs.Close()
+        // Read and log container output
+        go func() {
+            buf := make([]byte, 1024)
+            for {
+                n, err := logs.Read(buf)
+                if n > 0 {
+                    fmt.Printf("📋 Container: %s", string(buf[:n]))
+                }
+                if err != nil {
+                    break
+                }
+            }
+        }()
+    }
+    
+    // Wait for container to finish
+    select {
+    case <-ctx.Done():
+        // Timeout
+        fmt.Printf("⏰ Grading timeout for job %s\n", job.ID)
+        return &JobResult{Error: fmt.Sprintf("Grading timeout after %v", timeout)}
+    default:
+        // Container should finish on its own, but let's add a reasonable wait
+        time.Sleep(2 * time.Second)
+    }
+    
+    // Read results from the mounted directory
+    return q.readContainerResults(resultDir)
 }
 
-// Convert Python script JSON output to JobResult
-func (q *JobQueue) parseGradingOutput(stdout, stderr string) *JobResult {
-    fmt.Printf("🔍 Debug - Python stdout: %s\n", stdout)
-    fmt.Printf("🔍 Debug - Python stderr: %s\n", stderr)
+// Read grading results from container output
+func (q *JobQueue) readContainerResults(resultDir string) *JobResult {
+    resultFile := filepath.Join(resultDir, "output.json")
     
-    // Try to parse JSON output from Python script
-    var gradingResult struct {
-        Score       float64 `json:"score"`
-        MaxScore    float64 `json:"max_score"`
-        Feedback    string  `json:"feedback"`
-        TestResults []struct {
-            Name    string  `json:"name"`
-            Passed  bool    `json:"passed"`
-            Message string  `json:"message"`
-            Points  float64 `json:"points"`
-        } `json:"test_results"`
-        Error string `json:"error"`
+    // Check if results file exists
+    if _, err := os.Stat(resultFile); os.IsNotExist(err) {
+        return &JobResult{Error: "Grading container did not produce results file"}
     }
     
-    // Clean up stdout and try to find JSON
-    stdout = strings.TrimSpace(stdout)
-    
-    // Try to parse the entire stdout as JSON first
-    err := json.Unmarshal([]byte(stdout), &gradingResult)
-    if err == nil {
-        fmt.Printf("✅ Successfully parsed JSON directly\n")
-        if gradingResult.Error != "" {
-            return &JobResult{Error: gradingResult.Error}
-        }
-        
-        return &JobResult{
-            Score:    gradingResult.Score,
-            Feedback: gradingResult.Feedback,
-        }
+    // Read results
+    data, err := os.ReadFile(resultFile)
+    if err != nil {
+        return &JobResult{Error: fmt.Sprintf("Failed to read results: %v", err)}
     }
     
-    // If parsing the entire stdout fails, log the error
-    fmt.Printf("❌ Failed to parse stdout as JSON directly: %v\n", err)
-    
-    // Split stdout into lines and try to find valid JSON
-    lines := strings.Split(stdout, "\n")
-    for i, line := range lines {
-        line = strings.TrimSpace(line)
-        if strings.HasPrefix(line, "{") && strings.HasSuffix(line, "}") {
-            fmt.Printf("🔍 Trying to parse line %d: %s\n", i, line)
-            err := json.Unmarshal([]byte(line), &gradingResult)
-            if err == nil {
-                fmt.Printf("✅ Successfully parsed JSON from line %d\n", i)
-                if gradingResult.Error != "" {
-                    return &JobResult{Error: gradingResult.Error}
-                }
-                
-                return &JobResult{
-                    Score:    gradingResult.Score,
-                    Feedback: gradingResult.Feedback,
-                }
-            } else {
-                fmt.Printf("❌ Failed to parse line %d: %v\n", i, err)
-            }
-        }
+    // Parse JSON results
+    var result JobResult
+    err = json.Unmarshal(data, &result)
+    if err != nil {
+        return &JobResult{Error: fmt.Sprintf("Invalid results JSON: %v", err)}
     }
     
-    // Fallback: if no valid JSON found, return error with output
-    return &JobResult{
-        Error: fmt.Sprintf("Python grader did not return valid JSON.\nStdout: %s\nStderr: %s", stdout, stderr),
-    }
+    fmt.Printf("✅ Container grading complete: Score %.1f/%.1f\n", result.Score, 100.0)
+    return &result
 }
+
+// // Convert Python script JSON output to JobResult
+// func (q *JobQueue) parseGradingOutput(stdout, stderr string) *JobResult {
+//     fmt.Printf("🔍 Debug - Python stdout: %s\n", stdout)
+//     fmt.Printf("🔍 Debug - Python stderr: %s\n", stderr)
+    
+//     // Try to parse JSON output from Python script
+//     var gradingResult struct {
+//         Score       float64 `json:"score"`
+//         MaxScore    float64 `json:"max_score"`
+//         Feedback    string  `json:"feedback"`
+//         TestResults []struct {
+//             Name    string  `json:"name"`
+//             Passed  bool    `json:"passed"`
+//             Message string  `json:"message"`
+//             Points  float64 `json:"points"`
+//         } `json:"test_results"`
+//         Error string `json:"error"`
+//     }
+    
+//     // Clean up stdout and try to find JSON
+//     stdout = strings.TrimSpace(stdout)
+    
+//     // Try to parse the entire stdout as JSON first
+//     err := json.Unmarshal([]byte(stdout), &gradingResult)
+//     if err == nil {
+//         fmt.Printf("✅ Successfully parsed JSON directly\n")
+//         if gradingResult.Error != "" {
+//             return &JobResult{Error: gradingResult.Error}
+//         }
+        
+//         return &JobResult{
+//             Score:    gradingResult.Score,
+//             Feedback: gradingResult.Feedback,
+//         }
+//     }
+    
+//     // If parsing the entire stdout fails, log the error
+//     fmt.Printf("❌ Failed to parse stdout as JSON directly: %v\n", err)
+    
+//     // Split stdout into lines and try to find valid JSON
+//     lines := strings.Split(stdout, "\n")
+//     for i, line := range lines {
+//         line = strings.TrimSpace(line)
+//         if strings.HasPrefix(line, "{") && strings.HasSuffix(line, "}") {
+//             fmt.Printf("🔍 Trying to parse line %d: %s\n", i, line)
+//             err := json.Unmarshal([]byte(line), &gradingResult)
+//             if err == nil {
+//                 fmt.Printf("✅ Successfully parsed JSON from line %d\n", i)
+//                 if gradingResult.Error != "" {
+//                     return &JobResult{Error: gradingResult.Error}
+//                 }
+                
+//                 return &JobResult{
+//                     Score:    gradingResult.Score,
+//                     Feedback: gradingResult.Feedback,
+//                 }
+//             } else {
+//                 fmt.Printf("❌ Failed to parse line %d: %v\n", i, err)
+//             }
+//         }
+//     }
+    
+//     // Fallback: if no valid JSON found, return error with output
+//     return &JobResult{
+//         Error: fmt.Sprintf("Python grader did not return valid JSON.\nStdout: %s\nStderr: %s", stdout, stderr),
+//     }
+// }
 
 // Remove a file and log the action
 func (q *JobQueue) cleanupFile(filePath, jobID, reason string) {

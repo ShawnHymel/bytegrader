@@ -96,30 +96,30 @@ envsubst < "$REPO_DIR/deploy/docker-compose.yml" > docker-compose.yml
 # Copy Dockerfile
 cp "$REPO_DIR/deploy/Dockerfile" .
 
-# Copy graders directory
-mkdir -p graders
-if [ -f "$REPO_DIR/test.py" ]; then
-    cp "$REPO_DIR/test.py" graders/
-    echo "✅ Copied test.py to graders/"
-fi
-
-# Copy any grader scripts from graders directory
-if [ -d "$REPO_DIR/graders" ]; then
-    cp "$REPO_DIR/graders"/*.py graders/ 2>/dev/null || true
-    echo "✅ Copied grader scripts"
-fi
-
-# Copy registry file (ADD THIS)
-if [ -f "$REPO_DIR/graders/registry.yaml" ]; then
-    cp "$REPO_DIR/graders/registry.yaml" graders/
-    echo "✅ Copied registry.yaml"
-fi
-
 # Create other necessary directories
 mkdir -p uploads logs
 
-# Make graders executable
-chmod +x graders/*.py 2>/dev/null || true
+# Build grader images
+echo "🔨 Building grader images..."
+if [ -d "$REPO_DIR/graders" ]; then
+
+    # Copy graders directory
+    cp -r "$REPO_DIR/graders" .
+    echo "✅ Copied graders directory"
+    
+    # Build grader images from registry
+    cd graders
+    if [ -f "build.sh" ]; then
+        chmod +x build.sh
+        ./build.sh
+        echo "✅ Built grader images"
+    else
+        echo "⚠️ build.sh not found, skipping grader builds"
+    fi
+    cd ..
+else
+    echo "⚠️  No graders directory found"
+fi
 
 echo "🐳 Building and starting ByteGrader..."
 # Stop any existing containers

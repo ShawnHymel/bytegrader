@@ -2,5 +2,9 @@ assignments:
   test-stub:
     image: "bytegrader-test-stub:latest"
     description: "Simple test grader that returns constant results"
-    timeout_minutes: 5
     enabled: true
+    timeout_minutes: 5
+    resources:
+      memory_mb: 256
+      cpu_limit: 0.25
+      pids_limit: 50
