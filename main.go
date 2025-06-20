@@ -987,14 +987,16 @@ func (q *JobQueue) runContainerGrader(job *Job, tempDir string) *JobResult {
     fmt.Printf("🚀 Launching grading container %s for job %s...\n", containerID[:12], job.ID)
     
     // Start the container
-    if err := cli.ContainerStart(ctx, containerID, types.ContainerStartOptions{}); err != nil {
+    if err := cli.ContainerStart(ctx, containerID, container.StartOptions{}); 
+    err != nil {
         return &JobResult{Error: fmt.Sprintf("Failed to start grader container: %v", err)}
     }
     
     // Wait for completion using polling
     fmt.Printf("⏳ Waiting for grading (timeout: %v)...\n", timeout)
     
-    if err := q.waitForContainerCompletion(ctx, cli, containerID, timeout); err != nil {
+    if err := q.waitForContainerCompletion(ctx, cli, containerID, timeout); 
+    err != nil {
         // Stop the container on timeout/error
         cli.ContainerStop(ctx, containerID, container.StopOptions{})
         return &JobResult{Error: fmt.Sprintf("Container failed: %v", err)}
@@ -1009,7 +1011,7 @@ func (q *JobQueue) runContainerGrader(job *Job, tempDir string) *JobResult {
     // Check if the container exited with an error code
     exitCode := inspect.State.ExitCode
     if exitCode != 0 {
-        logs, _ := cli.ContainerLogs(ctx, containerID, types.ContainerLogsOptions{
+        logs, _ := cli.ContainerLogs(ctx, containerID, container.LogsOptions{
             ShowStdout: true,
             ShowStderr: true,
         })
@@ -1075,12 +1077,14 @@ func (q *JobQueue) prepareSubmissionVolume(ctx context.Context, cli *client.Clie
     containerID := resp.ID
     
     // Start the preparation container
-    if err := cli.ContainerStart(ctx, containerID, types.ContainerStartOptions{}); err != nil {
+    if err := cli.ContainerStart(ctx, containerID, container.StartOptions{}); 
+    err != nil {
         return fmt.Errorf("failed to start prep container: %v", err)
     }
     
     // Wait for completion
-    if err := q.waitForContainerCompletion(ctx, cli, containerID, 30*time.Second); err != nil {
+    if err := q.waitForContainerCompletion(ctx, cli, containerID, 30*time.Second); 
+    err != nil {
         return fmt.Errorf("prep container failed: %v", err)
     }
     
@@ -1091,7 +1095,7 @@ func (q *JobQueue) prepareSubmissionVolume(ctx context.Context, cli *client.Clie
     }
     
     if inspect.State.ExitCode != 0 {
-        logs, _ := cli.ContainerLogs(ctx, containerID, types.ContainerLogsOptions{
+        logs, _ := cli.ContainerLogs(ctx, containerID, container.LogsOptions{
             ShowStdout: true,
             ShowStderr: true,
         })
@@ -1145,7 +1149,7 @@ func (q *JobQueue) readResultsFromVolume(ctx context.Context, cli *client.Client
     containerID := resp.ID
     
     // Start the container
-    if err := cli.ContainerStart(ctx, containerID, types.ContainerStartOptions{}); err != nil {
+    if err := cli.ContainerStart(ctx, containerID, container.StartOptions{}); err != nil {
         return &JobResult{Error: fmt.Sprintf("Failed to start results reader: %v", err)}
     }
     
@@ -1155,7 +1159,7 @@ func (q *JobQueue) readResultsFromVolume(ctx context.Context, cli *client.Client
     }
     
     // Get the logs from the container
-    logs, err := cli.ContainerLogs(ctx, containerID, types.ContainerLogsOptions{
+    logs, err := cli.ContainerLogs(ctx, containerID, container.LogsOptions{
         ShowStdout: true,
         ShowStderr: true,
     })
