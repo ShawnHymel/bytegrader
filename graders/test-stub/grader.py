@@ -77,15 +77,45 @@ def safe_extract(zip_path, extract_to, max_size, allowed_file_types=None):
         zip_ref.extractall(extract_to)
 
 def main():
-    if len(sys.argv) != 4:
-        print(json.dumps({
-            "error": "Usage: python3 grade.py <submission_path> <original_filename> <work_dir>"
-        }))
+    """
+    Main function to handle grading logic.
+    This function checks the number of arguments to determine the mode of operation:
+    - Volume mode: No arguments, uses a default submission path.
+    - Standalone mode: Requires 3 arguments for submission path, original filename, and work directory.
+    
+    It extracts the submission, performs dummy grading, and returns a JSON result.
+    """
+    
+    # Volume mode - no arguments needed
+    if len(sys.argv) == 1:
+        submission_path = '/workspace/submission/submission.zip'
+        original_filename = 'submission.zip'
+        work_dir = '/workspace/extracted'
+        results_dir = '/workspace/results'
+        print("🐳 Running in VOLUME mode", file=sys.stderr)
+        
+    # Standalone mode - 3 arguments required
+    elif len(sys.argv) == 4:
+        # Standalone mode - 3 arguments required
+        submission_path = sys.argv[1]
+        original_filename = sys.argv[2] 
+        work_dir = sys.argv[3]
+        results_dir = None  # Write to current directory in standalone mode
+        print("🖥️  Running in STANDALONE mode", file=sys.stderr)
+    
+    # Unsupported mode - invalid arguments
+    else:
+        result = {
+            "error": "Invalid arguments. Use either:\n" +
+                    "  Volume mode: python3 grader.py (no arguments)\n" +
+                    "  Standalone mode: python3 grader.py <submission_path> <original_filename> <work_dir>"
+        }
+        print(json.dumps(result), file=sys.stderr)
         sys.exit(1)
     
-    submission_path = sys.argv[1]
-    original_filename = sys.argv[2] 
-    work_dir = sys.argv[3]
+    # Ensure results directory exists (volume mode)
+    if results_dir:
+        os.makedirs(results_dir, exist_ok=True)
     
     # Initialize grading result
     result = {
