@@ -17,7 +17,11 @@ import (
     "time"
 
     "github.com/google/uuid"
-    "github.com/testcontainers/testcontainers-go"
+    "github.com/docker/docker/api/types"
+    "github.com/docker/docker/api/types/container"
+    "github.com/docker/docker/api/types/mount"
+    "github.com/docker/docker/api/types/volume"
+    "github.com/docker/docker/client"
     "golang.org/x/time/rate"
     "gopkg.in/yaml.v3"
 )
@@ -922,6 +926,7 @@ func (q *JobQueue) performCleanup() {
 //------------------------------------------------------------------------------
 // Container Grading Functions
 
+// Run the grading process inside a Docker container
 func (q *JobQueue) runContainerGrader(job *Job, tempDir string) *JobResult {
 
     // Get assignment configuration from registry
@@ -936,57 +941,78 @@ func (q *JobQueue) runContainerGrader(job *Job, tempDir string) *JobResult {
     volumeName := fmt.Sprintf("bytegrader-job-%s", job.ID)
     
     // Set up timeout context
-    timeout := time.Duration(assignmentConfig.TimeoutMinutes) * time.Duration(time.Minute)
+    timeout := time.Duration(assignmentConfig.TimeoutMinutes) * time.Minute
     if timeout == 0 {
         timeout = config.GradingTimeout
     }
     ctx, cancel := context.WithTimeout(context.Background(), timeout)
     defer cancel()
     
+    // Create Docker client
+    cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+    if err != nil {
+        return &JobResult{Error: fmt.Sprintf("Failed to create Docker client: %v", err)}
+    }
+    defer cli.Close()
+    
     // Create volume and copy submission into it
-    err = q.prepareSubmissionVolume(ctx, volumeName, job.FilePath)
+    err = q.prepareSubmissionVolume(ctx, cli, volumeName, job.FilePath)
     if err != nil {
         return &JobResult{Error: fmt.Sprintf("Failed to prepare submission: %v", err)}
     }
-    defer q.cleanupVolume(ctx, volumeName)
+    defer q.cleanupVolume(ctx, cli, volumeName)
     
-    // Run grader container with volume mount only
-    req := testcontainers.ContainerRequest{
+    // Create grader container
+    resp, err := cli.ContainerCreate(ctx, &container.Config{
         Image: assignmentConfig.Image,
-        Mounts: testcontainers.Mounts(
-            testcontainers.VolumeMount(volumeName, "/workspace"),
-        ),
+        WorkingDir: "/workspace",
+    }, &container.HostConfig{
+        Mounts: []mount.Mount{
+            {
+                Type:   mount.TypeVolume,
+                Source: volumeName,
+                Target: "/workspace",
+            },
+        },
         AutoRemove: true,
-    }
+    }, nil, nil, "")
     
-    fmt.Printf("🚀 Launching grading container for job %s...\n", job.ID)
-    
-    // Start the grader container
-    container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
-        ContainerRequest: req,
-        Started:         true,
-    })
+    // Check for errors in container creation
     if err != nil {
-        return &JobResult{Error: fmt.Sprintf("Failed to start grader: %v", err)}
+        return &JobResult{Error: fmt.Sprintf("Failed to create grader container: %v", err)}
     }
-    defer container.Terminate(ctx)
     
-    // Wait for completion and get exit code
+    // Log the container ID
+    containerID := resp.ID
+    fmt.Printf("🚀 Launching grading container %s for job %s...\n", containerID[:12], job.ID)
+    
+    // Start the container
+    if err := cli.ContainerStart(ctx, containerID, types.ContainerStartOptions{}); err != nil {
+        return &JobResult{Error: fmt.Sprintf("Failed to start grader container: %v", err)}
+    }
+    
+    // Wait for completion using polling
     fmt.Printf("⏳ Waiting for grading (timeout: %v)...\n", timeout)
     
-    // Wait a bit for container to complete
-    time.Sleep(2 * time.Second)
-
-    // Check final state
-    state, err := container.State(ctx)
+    if err := q.waitForContainerCompletion(ctx, cli, containerID, timeout); err != nil {
+        // Stop the container on timeout/error
+        cli.ContainerStop(ctx, containerID, container.StopOptions{})
+        return &JobResult{Error: fmt.Sprintf("Container failed: %v", err)}
+    }
+    
+    // Get container info to check exit code
+    inspect, err := cli.ContainerInspect(ctx, containerID)
     if err != nil {
-        return &JobResult{Error: fmt.Sprintf("Failed to get container state: %v", err)}
+        return &JobResult{Error: fmt.Sprintf("Failed to inspect container: %v", err)}
     }
     
     // Check if the container exited with an error code
-    exitCode := int64(state.ExitCode)
+    exitCode := inspect.State.ExitCode
     if exitCode != 0 {
-        logs, _ := container.Logs(ctx)
+        logs, _ := cli.ContainerLogs(ctx, containerID, types.ContainerLogsOptions{
+            ShowStdout: true,
+            ShowStderr: true,
+        })
         if logs != nil {
             logData, _ := io.ReadAll(logs)
             logs.Close()
@@ -996,13 +1022,21 @@ func (q *JobQueue) runContainerGrader(job *Job, tempDir string) *JobResult {
     }
     
     // Read results from volume
-    return q.readResultsFromVolume(ctx, volumeName)
+    return q.readResultsFromVolume(ctx, cli, volumeName)
 }
 
 // Prepare the submission volume with the student's submission
-func (q *JobQueue) prepareSubmissionVolume(ctx context.Context, volumeName string, submissionPath string) error {
-
+func (q *JobQueue) prepareSubmissionVolume(ctx context.Context, cli *client.Client, volumeName string, submissionPath string) error {
+    
     fmt.Printf("📦 Preparing submission in volume %s...\n", volumeName)
+    
+    // Create the volume
+    _, err := cli.VolumeCreate(ctx, volume.CreateOptions{
+        Name: volumeName,
+    })
+    if err != nil {
+        return fmt.Errorf("failed to create volume: %v", err)
+    }
     
     // Read the submission file
     submissionData, err := os.ReadFile(submissionPath)
@@ -1013,8 +1047,8 @@ func (q *JobQueue) prepareSubmissionVolume(ctx context.Context, volumeName strin
     // Encode submission data to base64 for safe transfer
     encodedSubmission := base64.StdEncoding.EncodeToString(submissionData)
     
-    // Create a volume for the submission
-    req := testcontainers.ContainerRequest{
+    // Create a preparation container to set up the workspace
+    resp, err := cli.ContainerCreate(ctx, &container.Config{
         Image: "alpine:latest",
         Cmd: []string{"sh", "-c", fmt.Sprintf(`
             echo "Setting up workspace..."
@@ -1023,55 +1057,62 @@ func (q *JobQueue) prepareSubmissionVolume(ctx context.Context, volumeName strin
             echo "Submission prepared: $(ls -la /workspace/submission/)"
             echo "Ready for grading"
         `, encodedSubmission)},
-        Mounts: testcontainers.Mounts(
-            testcontainers.VolumeMount(volumeName, "/workspace"),
-        ),
+    }, &container.HostConfig{
+        Mounts: []mount.Mount{
+            {
+                Type:   mount.TypeVolume,
+                Source: volumeName,
+                Target: "/workspace",
+            },
+        },
         AutoRemove: true,
-    }
+    }, nil, nil, "")
     
-    // Create and start the container to prepare the submission
-    container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
-        ContainerRequest: req,
-        Started:         true,
-    })
     if err != nil {
         return fmt.Errorf("failed to create prep container: %v", err)
     }
-    defer container.Terminate(ctx)
     
-    // Wait a bit for container to complete
-    time.Sleep(2 * time.Second)
-
-    // Check final state
-    state, err := container.State(ctx)
-    if err != nil {
-        return fmt.Errorf("failed to get container state: %v", err)
+    containerID := resp.ID
+    
+    // Start the preparation container
+    if err := cli.ContainerStart(ctx, containerID, types.ContainerStartOptions{}); err != nil {
+        return fmt.Errorf("failed to start prep container: %v", err)
     }
     
-    // Check if the container exited with an error code
-    exitCode := int64(state.ExitCode)
-    if exitCode != 0 {
-        logs, _ := container.Logs(ctx)
+    // Wait for completion
+    if err := q.waitForContainerCompletion(ctx, cli, containerID, 30*time.Second); err != nil {
+        return fmt.Errorf("prep container failed: %v", err)
+    }
+    
+    // Check exit code
+    inspect, err := cli.ContainerInspect(ctx, containerID)
+    if err != nil {
+        return fmt.Errorf("failed to inspect prep container: %v", err)
+    }
+    
+    if inspect.State.ExitCode != 0 {
+        logs, _ := cli.ContainerLogs(ctx, containerID, types.ContainerLogsOptions{
+            ShowStdout: true,
+            ShowStderr: true,
+        })
         if logs != nil {
             logData, _ := io.ReadAll(logs)
             logs.Close()
-            return fmt.Errorf("Prep container exited with code %d: %s", state.ExitCode, string(logData))
+            return fmt.Errorf("prep container exited with code %d: %s", inspect.State.ExitCode, string(logData))
         }
-        return fmt.Errorf("Prep container exited with code %d", state.ExitCode)
+        return fmt.Errorf("prep container exited with code %d", inspect.State.ExitCode)
     }
     
     fmt.Printf("✅ Submission prepared in volume\n")
-
     return nil
 }
 
 // Read results from the grading volume and parse the output
-func (q *JobQueue) readResultsFromVolume(ctx context.Context, volumeName string) *JobResult {
-
+func (q *JobQueue) readResultsFromVolume(ctx context.Context, cli *client.Client, volumeName string) *JobResult {
     fmt.Printf("📖 Reading results from volume %s...\n", volumeName)
     
     // Create a container to read the results
-    req := testcontainers.ContainerRequest{
+    resp, err := cli.ContainerCreate(ctx, &container.Config{
         Image: "alpine:latest",
         Cmd: []string{"sh", "-c", `
             if [ -f /workspace/results/output.json ]; then
@@ -1086,33 +1127,38 @@ func (q *JobQueue) readResultsFromVolume(ctx context.Context, volumeName string)
                 ls -la /workspace/results/ >&2 || echo "Results directory not found" >&2
             fi
         `},
-        Mounts: testcontainers.Mounts(
-            testcontainers.VolumeMount(volumeName, "/workspace"),
-        ),
+    }, &container.HostConfig{
+        Mounts: []mount.Mount{
+            {
+                Type:   mount.TypeVolume,
+                Source: volumeName,
+                Target: "/workspace",
+            },
+        },
         AutoRemove: true,
+    }, nil, nil, "")
+    
+    if err != nil {
+        return &JobResult{Error: fmt.Sprintf("Failed to create results reader container: %v", err)}
     }
     
-    // Start the container to read results
-    container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
-        ContainerRequest: req,
-        Started:         true,
-    })
-    if err != nil {
-        return &JobResult{Error: fmt.Sprintf("Failed to read results: %v", err)}
-    }
-    defer container.Terminate(ctx)
+    containerID := resp.ID
     
-    // Wait a bit for container to complete
-    time.Sleep(2 * time.Second)
-
-    // Check final state 
-    _, err = container.State(ctx)
-    if err != nil {
-        return &JobResult{Error: fmt.Sprintf("Failed to get container state: %v", err)}
+    // Start the container
+    if err := cli.ContainerStart(ctx, containerID, types.ContainerStartOptions{}); err != nil {
+        return &JobResult{Error: fmt.Sprintf("Failed to start results reader: %v", err)}
+    }
+    
+    // Wait for completion
+    if err := q.waitForContainerCompletion(ctx, cli, containerID, 30*time.Second); err != nil {
+        return &JobResult{Error: fmt.Sprintf("Results reader failed: %v", err)}
     }
     
     // Get the logs from the container
-    logs, err := container.Logs(ctx)
+    logs, err := cli.ContainerLogs(ctx, containerID, types.ContainerLogsOptions{
+        ShowStdout: true,
+        ShowStderr: true,
+    })
     if err != nil {
         return &JobResult{Error: fmt.Sprintf("Failed to get results: %v", err)}
     }
@@ -1152,30 +1198,51 @@ func (q *JobQueue) readResultsFromVolume(ctx context.Context, volumeName string)
     }
     
     fmt.Printf("✅ Container grading complete: Score %.1f\n", result.Score)
-
     return &result
 }
 
 // Cleanup the volume after grading is complete
-func (q *JobQueue) cleanupVolume(ctx context.Context, volumeName string) {
-    // Create a cleanup container to remove the volume
-    req := testcontainers.ContainerRequest{
-        Image: "alpine:latest",
-        Cmd:   []string{"echo", "Volume cleanup placeholder"},
-        AutoRemove: true,
+func (q *JobQueue) cleanupVolume(ctx context.Context, cli *client.Client, volumeName string) {
+    err := cli.VolumeRemove(ctx, volumeName, true) // force remove
+    if err != nil {
+        fmt.Printf("⚠️  Failed to cleanup volume %s: %v\n", volumeName, err)
+    } else {
+        fmt.Printf("🗑️  Volume %s cleanup completed\n", volumeName)
     }
+}
+
+// Wait for container completion using polling 
+//***TODO: see if we can use events instead***
+func (q *JobQueue) waitForContainerCompletion(ctx context.Context, cli *client.Client, containerID string, timeout time.Duration) error {
+    start := time.Now()
+    ticker := time.NewTicker(500 * time.Millisecond) // Check every 500ms
+    defer ticker.Stop()
     
-    container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
-        ContainerRequest: req,
-        Started:         true,
-    })
-    if err == nil {
-        // Just wait a moment for the echo command to complete
-        time.Sleep(500 * time.Millisecond)
-        container.Terminate(ctx)
+    for {
+        select {
+        case <-ticker.C:
+            inspect, err := cli.ContainerInspect(ctx, containerID)
+            if err != nil {
+                // Container might be gone - check if it's "No such container" error
+                if strings.Contains(err.Error(), "No such container") {
+                    // Container finished and was cleaned up - this is actually success
+                    return nil
+                }
+                return fmt.Errorf("failed to inspect container: %v", err)
+            }
+            
+            if !inspect.State.Running {
+                return nil // Container finished
+            }
+            
+            if time.Since(start) > timeout {
+                return fmt.Errorf("timeout after %v", timeout)
+            }
+            
+        case <-ctx.Done():
+            return ctx.Err()
+        }
     }
-    
-    fmt.Printf("🗑️  Volume %s cleanup completed\n", volumeName)
 }
 
 //------------------------------------------------------------------------------
@@ -1285,20 +1352,20 @@ func main() {
     fmt.Printf("   Uploads Directory: %s (files will be stored here)\n", config.UploadsDir)
     fmt.Println("")
 
-    // Test Docker availability using testcontainers
+    // Test Docker availability using Docker SDK
     ctx := context.Background()
-    provider, err := testcontainers.NewDockerProvider()
+    cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
     if err != nil {
-        log.Fatalf("❌ Failed to create Docker provider: %v", err)
+        log.Fatalf("❌ Failed to create Docker client: %v", err)
     }
-    defer provider.Close()
+    defer cli.Close()
 
     // Check if Docker is running and accessible
-    info, err := provider.DaemonHost(ctx)
+    info, err := cli.Info(ctx)
     if err != nil {
         log.Fatalf("❌ Failed to connect to Docker: %v", err)
     }
-    fmt.Printf("🐳 Connected to Docker: %s\n", info)
+    fmt.Printf("🐳 Connected to Docker: %s (API %s)\n", info.Name, info.ServerVersion)
     
     // Print security configuration
     fmt.Printf("🔐 Security configuration:\n")

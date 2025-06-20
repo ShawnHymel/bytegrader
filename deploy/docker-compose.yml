@@ -10,6 +10,7 @@ services:
       - ./logs:/app/logs
       - /var/run/docker.sock:/var/run/docker.sock
       - ./graders/registry.yaml:/usr/local/bin/graders/registry.yaml:ro
+      - /tmp/bytegrader:/tmp/bytegrader
 
     user: "${DOCKER_USER_ID}:${DOCKER_GROUP_ID}"
     
@@ -22,6 +23,7 @@ services:
       - MAX_CONCURRENT_JOBS=${BYTEGRADER_MAX_CONCURRENT_JOBS:-2}
       - UPLOADS_DIR=/tmp/uploads
       - GRADING_SCRIPTS_DIR=/usr/local/bin/graders
+      - DOCKER_HOST=unix:///var/run/docker.sock
       
       # Security settings (from setup-server.sh configuration)
       - REQUIRE_API_KEY=${BYTEGRADER_REQUIRE_API_KEY:-false}
@@ -38,9 +40,6 @@ services:
       - COMPLETED_JOB_TTL_HOURS=${BYTEGRADER_COMPLETED_JOB_TTL_HOURS:-24}
       - FAILED_JOB_TTL_HOURS=${BYTEGRADER_FAILED_JOB_TTL_HOURS:-24}
       - OLD_FILE_TTL_HOURS=${BYTEGRADER_OLD_FILE_TTL_HOURS:-48}
-
-      # Testcontainers settings
-      - TESTCONTAINERS_RYUK_DISABLED=true
     
     restart: unless-stopped
     
