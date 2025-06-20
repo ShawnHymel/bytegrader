@@ -10,7 +10,7 @@ services:
       - ./logs:/app/logs
       - /var/run/docker.sock:/var/run/docker.sock
       - ./graders/registry.yaml:/usr/local/bin/graders/registry.yaml:ro
-      - /tmp/bytegrader:/tmp/bytegrader
+      - bytegrader-workspace:/workspace
 
     user: "${DOCKER_USER_ID}:${DOCKER_GROUP_ID}"
     
@@ -62,3 +62,7 @@ services:
         reservations:
           memory: 512M
           cpus: '0.5'
+
+volumes:
+  bytegrader-workspace:
+    driver: local

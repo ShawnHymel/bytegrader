@@ -936,8 +936,8 @@ func (q *JobQueue) runContainerGrader(job *Job, tempDir string) *JobResult {
     
     fmt.Printf("🐳 Starting container grading with image: %s\n", assignmentConfig.Image)
     
-    // Create unique volume name for this job
-    volumeName := fmt.Sprintf("bytegrader-job-%s", job.ID)
+    // Create job-specific directory in shared volume
+    jobWorkspace := fmt.Sprintf("/workspace/jobs/%s", job.ID)
     
     // Set up timeout context
     timeout := time.Duration(assignmentConfig.TimeoutMinutes) * time.Minute
@@ -954,22 +954,22 @@ func (q *JobQueue) runContainerGrader(job *Job, tempDir string) *JobResult {
     }
     defer cli.Close()
     
-    // Create volume and copy submission into it
-    err = q.prepareSubmissionVolume(ctx, cli, volumeName, job.FilePath)
+    // Prepare submission in shared volume (no prep container needed!)
+    err = q.prepareSubmissionInSharedVolume(jobWorkspace, job.FilePath)
     if err != nil {
         return &JobResult{Error: fmt.Sprintf("Failed to prepare submission: %v", err)}
     }
-    defer q.cleanupVolume(ctx, cli, volumeName)
+    defer q.cleanupJobWorkspace(jobWorkspace) // Clean up when done
     
     // Create grader container
     resp, err := cli.ContainerCreate(ctx, &container.Config{
         Image: assignmentConfig.Image,
-        WorkingDir: "/workspace",
+        WorkingDir: fmt.Sprintf("/workspace/jobs/%s", job.ID),
     }, &container.HostConfig{
         Mounts: []mount.Mount{
             {
                 Type:   mount.TypeVolume,
-                Source: volumeName,
+                Source: "bytegrader-workspace",
                 Target: "/workspace",
             },
         },
@@ -986,16 +986,14 @@ func (q *JobQueue) runContainerGrader(job *Job, tempDir string) *JobResult {
     fmt.Printf("🚀 Launching grading container %s for job %s...\n", containerID[:12], job.ID)
     
     // Start the container
-    if err := cli.ContainerStart(ctx, containerID, container.StartOptions{}); 
-    err != nil {
+    if err := cli.ContainerStart(ctx, containerID, container.StartOptions{}); err != nil {
         return &JobResult{Error: fmt.Sprintf("Failed to start grader container: %v", err)}
     }
     
     // Wait for completion using polling
     fmt.Printf("⏳ Waiting for grading (timeout: %v)...\n", timeout)
     
-    if err := q.waitForContainerCompletion(ctx, cli, containerID, timeout); 
-    err != nil {
+    if err := q.waitForContainerCompletion(ctx, cli, containerID, timeout); err != nil {
         // Stop the container on timeout/error
         cli.ContainerStop(ctx, containerID, container.StopOptions{})
         return &JobResult{Error: fmt.Sprintf("Container failed: %v", err)}
@@ -1022,180 +1020,66 @@ func (q *JobQueue) runContainerGrader(job *Job, tempDir string) *JobResult {
         return &JobResult{Error: fmt.Sprintf("Grader exited with code %d", exitCode)}
     }
     
-    // Read results from volume
-    return q.readResultsFromVolume(ctx, cli, volumeName)
+    // Read results from shared volume
+    return q.readResultsFromSharedVolume(jobWorkspace)
 }
 
-// Prepare the submission volume with the student's submission
-func (q *JobQueue) prepareSubmissionVolume(ctx context.Context, cli *client.Client, volumeName string, submissionPath string) error {
+// Prepare submission in shared volume (no containers needed)
+func (q *JobQueue) prepareSubmissionInSharedVolume(jobWorkspace string, submissionPath string) error {
+
+    fmt.Printf("📦 Preparing submission in shared volume at %s...\n", jobWorkspace)
     
-    fmt.Printf("📦 Preparing submission in volume %s...\n", volumeName)
-    
-    // Create the volume
-    _, err := cli.VolumeCreate(ctx, volume.CreateOptions{
-        Name: volumeName,
-    })
+    // Create job directories
+    err := os.MkdirAll(filepath.Join(jobWorkspace, "submission"), 0755)
     if err != nil {
-        return fmt.Errorf("failed to create volume: %v", err)
+        return fmt.Errorf("failed to create submission directory: %v", err)
     }
     
-    // Read the submission file
-    submissionData, err := os.ReadFile(submissionPath)
+    // Create results directory
+    err = os.MkdirAll(filepath.Join(jobWorkspace, "results"), 0755)
     if err != nil {
-        return fmt.Errorf("failed to read submission file: %v", err)
+        return fmt.Errorf("failed to create results directory: %v", err)
     }
     
-    // Encode submission data to base64 for safe transfer
-    encodedSubmission := base64.StdEncoding.EncodeToString(submissionData)
-    
-    // Create a preparation container to set up the workspace
-    resp, err := cli.ContainerCreate(ctx, &container.Config{
-        Image: "alpine:latest",
-        Cmd: []string{"sh", "-c", fmt.Sprintf(`
-            echo "Setting up workspace..."
-            mkdir -p /workspace/submission /workspace/results
-            echo "%s" | base64 -d > /workspace/submission/submission.zip
-            echo "Submission prepared: $(ls -la /workspace/submission/)"
-            echo "Ready for grading"
-        `, encodedSubmission)},
-    }, &container.HostConfig{
-        Mounts: []mount.Mount{
-            {
-                Type:   mount.TypeVolume,
-                Source: volumeName,
-                Target: "/workspace",
-            },
-        },
-        AutoRemove: true,
-    }, nil, nil, "")
-    
+    // Copy submission file directly
+    submissionFile := filepath.Join(jobWorkspace, "submission", "submission.zip")
+    err = q.copyFile(submissionPath, submissionFile)
     if err != nil {
-        return fmt.Errorf("failed to create prep container: %v", err)
+        return fmt.Errorf("failed to copy submission file: %v", err)
     }
     
-    containerID := resp.ID
-    
-    // Start the preparation container
-    if err := cli.ContainerStart(ctx, containerID, container.StartOptions{}); 
-    err != nil {
-        return fmt.Errorf("failed to start prep container: %v", err)
-    }
-    
-    // Wait for completion
-    if err := q.waitForContainerCompletion(ctx, cli, containerID, 30*time.Second); 
-    err != nil {
-        return fmt.Errorf("prep container failed: %v", err)
-    }
-    
-    // Check exit code
-    inspect, err := cli.ContainerInspect(ctx, containerID)
-    if err != nil {
-        return fmt.Errorf("failed to inspect prep container: %v", err)
-    }
-    
-    if inspect.State.ExitCode != 0 {
-        logs, _ := cli.ContainerLogs(ctx, containerID, container.LogsOptions{
-            ShowStdout: true,
-            ShowStderr: true,
-        })
-        if logs != nil {
-            logData, _ := io.ReadAll(logs)
-            logs.Close()
-            return fmt.Errorf("prep container exited with code %d: %s", inspect.State.ExitCode, string(logData))
-        }
-        return fmt.Errorf("prep container exited with code %d", inspect.State.ExitCode)
-    }
-    
-    fmt.Printf("✅ Submission prepared in volume\n")
+    fmt.Printf("✅ Submission prepared in shared volume\n")
+
     return nil
 }
 
-// Read results from the grading volume and parse the output
-func (q *JobQueue) readResultsFromVolume(ctx context.Context, cli *client.Client, volumeName string) *JobResult {
-    fmt.Printf("📖 Reading results from volume %s...\n", volumeName)
+// Read results from shared volume
+func (q *JobQueue) readResultsFromSharedVolume(jobWorkspace string) *JobResult {
+
+    fmt.Printf("📖 Reading results from shared volume at %s...\n", jobWorkspace)
     
-    // Create a container to read the results
-    resp, err := cli.ContainerCreate(ctx, &container.Config{
-        Image: "alpine:latest",
-        Cmd: []string{"sh", "-c", `
-            if [ -f /workspace/results/output.json ]; then
-                echo "=== GRADING_RESULTS_START ==="
-                cat /workspace/results/output.json
-                echo "=== GRADING_RESULTS_END ==="
-            else
-                echo "=== GRADING_RESULTS_START ==="
-                echo '{"error": "No output.json found in results directory"}'
-                echo "=== GRADING_RESULTS_END ==="
-                echo "Available files:" >&2
-                ls -la /workspace/results/ >&2 || echo "Results directory not found" >&2
-            fi
-        `},
-    }, &container.HostConfig{
-        Mounts: []mount.Mount{
-            {
-                Type:   mount.TypeVolume,
-                Source: volumeName,
-                Target: "/workspace",
-            },
-        },
-        AutoRemove: true,
-    }, nil, nil, "")
+    // Construct the results file path
+    resultsFile := filepath.Join(jobWorkspace, "results", "output.json")
     
+    // Check if results file exists
+    if _, err := os.Stat(resultsFile); os.IsNotExist(err) {
+        return &JobResult{Error: "No output.json found in results directory"}
+    }
+    
+    // Read results file
+    resultData, err := os.ReadFile(resultsFile)
     if err != nil {
-        return &JobResult{Error: fmt.Sprintf("Failed to create results reader container: %v", err)}
+        return &JobResult{Error: fmt.Sprintf("Failed to read results file: %v", err)}
     }
-    
-    containerID := resp.ID
-    
-    // Start the container
-    if err := cli.ContainerStart(ctx, containerID, container.StartOptions{}); err != nil {
-        return &JobResult{Error: fmt.Sprintf("Failed to start results reader: %v", err)}
-    }
-    
-    // Wait for completion
-    if err := q.waitForContainerCompletion(ctx, cli, containerID, 30*time.Second); err != nil {
-        return &JobResult{Error: fmt.Sprintf("Results reader failed: %v", err)}
-    }
-    
-    // Get the logs from the container
-    logs, err := cli.ContainerLogs(ctx, containerID, container.LogsOptions{
-        ShowStdout: true,
-        ShowStderr: true,
-    })
-    if err != nil {
-        return &JobResult{Error: fmt.Sprintf("Failed to get results: %v", err)}
-    }
-    defer logs.Close()
-    
-    // Read the logs to get the grading results
-    resultData, err := io.ReadAll(logs)
-    if err != nil {
-        return &JobResult{Error: fmt.Sprintf("Failed to read result data: %v", err)}
-    }
-    
-    // Parse the result data
-    resultStr := string(resultData)
-    startMarker := "=== GRADING_RESULTS_START ==="
-    endMarker := "=== GRADING_RESULTS_END ==="
-    
-    // Find the start and end markers in the result string
-    startIdx := strings.Index(resultStr, startMarker)
-    endIdx := strings.Index(resultStr, endMarker)
-    
-    // Validate markers
-    if startIdx == -1 || endIdx == -1 {
-        return &JobResult{Error: fmt.Sprintf("Invalid result format: %s", resultStr)}
-    }
-    
-    // Extract the JSON string between the markers
-    jsonStr := strings.TrimSpace(resultStr[startIdx+len(startMarker):endIdx])
     
     // Parse the JSON result
     var result JobResult
-    err = json.Unmarshal([]byte(jsonStr), &result)
+    err = json.Unmarshal(resultData, &result)
     if err != nil {
-        return &JobResult{Error: fmt.Sprintf("Invalid results JSON: %s", jsonStr)}
+        return &JobResult{Error: fmt.Sprintf("Invalid results JSON: %s", string(resultData))}
     }
+    
+    // Validate score
     if result.Error != "" {
         return &result
     }
@@ -1204,47 +1088,13 @@ func (q *JobQueue) readResultsFromVolume(ctx context.Context, cli *client.Client
     return &result
 }
 
-// Cleanup the volume after grading is complete
-func (q *JobQueue) cleanupVolume(ctx context.Context, cli *client.Client, volumeName string) {
-    err := cli.VolumeRemove(ctx, volumeName, true) // force remove
+// Cleanup job workspace directory
+func (q *JobQueue) cleanupJobWorkspace(jobWorkspace string) {
+    err := os.RemoveAll(jobWorkspace)
     if err != nil {
-        fmt.Printf("⚠️  Failed to cleanup volume %s: %v\n", volumeName, err)
+        fmt.Printf("⚠️  Failed to cleanup job workspace %s: %v\n", jobWorkspace, err)
     } else {
-        fmt.Printf("🗑️  Volume %s cleanup completed\n", volumeName)
-    }
-}
-
-// Wait for container completion using polling 
-//***TODO: see if we can use events instead***
-func (q *JobQueue) waitForContainerCompletion(ctx context.Context, cli *client.Client, containerID string, timeout time.Duration) error {
-    start := time.Now()
-    ticker := time.NewTicker(500 * time.Millisecond) // Check every 500ms
-    defer ticker.Stop()
-    
-    for {
-        select {
-        case <-ticker.C:
-            inspect, err := cli.ContainerInspect(ctx, containerID)
-            if err != nil {
-                // Container might be gone - check if it's "No such container" error
-                if strings.Contains(err.Error(), "No such container") {
-                    // Container finished and was cleaned up - this is actually success
-                    return nil
-                }
-                return fmt.Errorf("failed to inspect container: %v", err)
-            }
-            
-            if !inspect.State.Running {
-                return nil // Container finished
-            }
-            
-            if time.Since(start) > timeout {
-                return fmt.Errorf("timeout after %v", timeout)
-            }
-            
-        case <-ctx.Done():
-            return ctx.Err()
-        }
+        fmt.Printf("🗑️  Job workspace %s cleanup completed\n", jobWorkspace)
     }
 }
 
