@@ -894,7 +894,7 @@ func (q *JobQueue) runContainerGrader(job *Job, tempDir string) *JobResult {
     req := testcontainers.ContainerRequest{
         Image: assignmentConfig.Image,
         Mounts: testcontainers.Mounts(
-            testcontainers.BindMount(submissionPath, "/submission/submission.zip"),
+            testcontainers.BindMount(job.FilePath, "/submission/submission.zip"),
             testcontainers.BindMount(resultDir, "/results"),
         ),
         AutoRemove: true,
