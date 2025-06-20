@@ -38,6 +38,9 @@ services:
       - COMPLETED_JOB_TTL_HOURS=${BYTEGRADER_COMPLETED_JOB_TTL_HOURS:-24}
       - FAILED_JOB_TTL_HOURS=${BYTEGRADER_FAILED_JOB_TTL_HOURS:-24}
       - OLD_FILE_TTL_HOURS=${BYTEGRADER_OLD_FILE_TTL_HOURS:-48}
+
+      # Testcontainers settings
+      - TESTCONTAINERS_RYUK_DISABLED=true
     
     restart: unless-stopped
     
