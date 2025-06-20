@@ -843,64 +843,61 @@ func getAssignmentConfig(assignmentID string) (*AssignmentConfig, error) {
     return &assignment, nil
 }
 
-// Execute grading using a Docker container
+// Execute grading using a Docker container with volumes  
 func (q *JobQueue) runContainerGrader(job *Job, tempDir string) *JobResult {
-    
+
     // Get assignment configuration from registry
     assignmentConfig, err := getAssignmentConfig(job.AssignmentID)
     if err != nil {
         return &JobResult{Error: fmt.Sprintf("Assignment configuration error: %v", err)}
     }
     
-    // Log grading start
-    fmt.Printf("📁 Mounting submission from: %s\n", job.FilePath)
     fmt.Printf("🐳 Starting container grading with image: %s\n", assignmentConfig.Image)
     
-    // Create result directory
-    resultDir := fmt.Sprintf("%s/results", tempDir)
-    err = os.MkdirAll(resultDir, 0755)
+    // Create job-specific directory in the shared workspace
+    jobWorkDir := filepath.Join("/tmp/grading-volumes", job.ID)
+    submissionDir := filepath.Join(jobWorkDir, "submission")
+    resultsDir := filepath.Join(jobWorkDir, "results")
+    
+    // Create directories
+    err = os.MkdirAll(submissionDir, 0755)
     if err != nil {
-        return &JobResult{Error: "Failed to create result directory"}
+        return &JobResult{Error: fmt.Sprintf("Failed to create submission directory: %v", err)}
     }
+    err = os.MkdirAll(resultsDir, 0755)
+    if err != nil {
+        return &JobResult{Error: fmt.Sprintf("Failed to create results directory: %v", err)}
+    }
+    defer os.RemoveAll(jobWorkDir) // Cleanup
+    
+    // Copy submission file to the submission directory
+    submissionPath := filepath.Join(submissionDir, "submission.zip")
+    err = q.copyFile(job.FilePath, submissionPath)
+    if err != nil {
+        return &JobResult{Error: fmt.Sprintf("Failed to copy submission: %v", err)}
+    }
+    
+    fmt.Printf("📁 Submission ready at: %s\n", submissionPath)
     
     // Set up timeout context
     timeout := time.Duration(assignmentConfig.TimeoutMinutes) * time.Minute
     if timeout == 0 {
-        timeout = config.GradingTimeout // fallback to global timeout
+        timeout = config.GradingTimeout
     }
     ctx, cancel := context.WithTimeout(context.Background(), timeout)
     defer cancel()
     
-    // Set up resource limits from assignment config
-    memoryLimit := int64(512 * 1024 * 1024) // Default 512MB
-    cpuQuota := int64(0)                     // Default no limit
-    pidsLimit := int64(100)                  // Default 100 processes
-
-    // Apply assignment-specific resource limits
-    if assignmentConfig.Resources.MemoryMB > 0 {
-        memoryLimit = int64(assignmentConfig.Resources.MemoryMB) * 1024 * 1024
-    }
-    if assignmentConfig.Resources.CPULimit > 0 {
-        // Convert CPU limit (cores) to quota (microseconds per 100ms period)
-        cpuQuota = int64(assignmentConfig.Resources.CPULimit * 100000)
-    }
-    if assignmentConfig.Resources.PidsLimit > 0 {
-        pidsLimit = int64(assignmentConfig.Resources.PidsLimit)
-    }
-    fmt.Printf("🔧 Resource limits: %dMB RAM, %.2f CPU cores, %d processes\n", 
-        memoryLimit/(1024*1024), float64(cpuQuota)/100000, pidsLimit)
-
-    // Create container request (basic version first) ***TODO: Add resource limits***
+    // Create and run grader container with bind mounts to our directories
     req := testcontainers.ContainerRequest{
         Image: assignmentConfig.Image,
         Mounts: testcontainers.Mounts(
-            testcontainers.BindMount(job.FilePath, "/submission/submission.zip"),
-            testcontainers.BindMount(resultDir, "/results"),
+            testcontainers.BindMount(submissionDir, "/submission"),
+            testcontainers.BindMount(resultsDir, "/results"),
         ),
         AutoRemove: true,
     }
     
-    // Start container
+    // Set resource limits if configured
     fmt.Printf("🚀 Launching grading container for job %s...\n", job.ID)
     gradingContainer, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
         ContainerRequest: req,
@@ -913,46 +910,17 @@ func (q *JobQueue) runContainerGrader(job *Job, tempDir string) *JobResult {
     
     // Wait for container to complete
     fmt.Printf("⏳ Waiting for grading to complete (timeout: %v)...\n", timeout)
+    time.Sleep(10 * time.Second) // Give it time to run
     
-    // Get container logs for debugging
-    logs, err := gradingContainer.Logs(ctx)
-    if err != nil {
-        fmt.Printf("⚠️  Could not get container logs: %v\n", err)
-    } else {
-        defer logs.Close()
-        // Read and log container output
-        go func() {
-            buf := make([]byte, 1024)
-            for {
-                n, err := logs.Read(buf)
-                if n > 0 {
-                    fmt.Printf("📋 Container: %s", string(buf[:n]))
-                }
-                if err != nil {
-                    break
-                }
-            }
-        }()
-    }
-    
-    // Wait for container to finish
-    select {
-    case <-ctx.Done():
-        // Timeout
-        fmt.Printf("⏰ Grading timeout for job %s\n", job.ID)
-        return &JobResult{Error: fmt.Sprintf("Grading timeout after %v", timeout)}
-    default:
-        // Container should finish on its own, but let's add a reasonable wait
-        time.Sleep(2 * time.Second)
-    }
-    
-    // Read results from the mounted directory
-    return q.readContainerResults(resultDir)
+    // Read results directly from the results directory
+    return q.readGradingResults(resultsDir)
 }
 
-// Read grading results from container output
-func (q *JobQueue) readContainerResults(resultDir string) *JobResult {
-    resultFile := filepath.Join(resultDir, "output.json")
+// Read grading results from the results directory
+func (q *JobQueue) readGradingResults(resultsDir string) *JobResult {
+
+    // Construct the path to the results file
+    resultFile := filepath.Join(resultsDir, "output.json")
     
     // Check if results file exists
     if _, err := os.Stat(resultFile); os.IsNotExist(err) {
@@ -972,7 +940,9 @@ func (q *JobQueue) readContainerResults(resultDir string) *JobResult {
         return &JobResult{Error: fmt.Sprintf("Invalid results JSON: %v", err)}
     }
     
-    fmt.Printf("✅ Container grading complete: Score %.1f/%.1f\n", result.Score, 100.0)
+    // Print final score
+    fmt.Printf("✅ Container grading complete: Score %.1f\n", result.Score)
+    
     return &result
 }
 
