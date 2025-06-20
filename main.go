@@ -984,7 +984,8 @@ func (q *JobQueue) runContainerGrader(job *Job, tempDir string) *JobResult {
     }
     
     // Check if the container exited with an error code
-    if state.ExitCode != 0 {
+    exitCode := int64(state.ExitCode)
+    if exitCode != 0 {
         logs, _ := container.Logs(ctx)
         if logs != nil {
             logData, _ := io.ReadAll(logs)
@@ -1048,7 +1049,8 @@ func (q *JobQueue) prepareSubmissionVolume(ctx context.Context, volumeName strin
     }
     
     // Check if the container exited with an error code
-    if state.ExitCode != 0 {
+    exitCode := int64(state.ExitCode)
+    if exitCode != 0 {
         logs, _ := container.Logs(ctx)
         if logs != nil {
             logData, _ := io.ReadAll(logs)
@@ -1104,7 +1106,7 @@ func (q *JobQueue) readResultsFromVolume(ctx context.Context, volumeName string)
     time.Sleep(2 * time.Second)
 
     // Check final state 
-    _, err := container.State(ctx)
+    _, err = container.State(ctx)
     if err != nil {
         return &JobResult{Error: fmt.Sprintf("Failed to get container state: %v", err)}
     }
