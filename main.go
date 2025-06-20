@@ -19,7 +19,6 @@ import (
     "github.com/google/uuid"
     "github.com/docker/docker/api/types/container"
     "github.com/docker/docker/api/types/mount"
-    "github.com/docker/docker/api/types/volume"
     "github.com/docker/docker/client"
     "golang.org/x/time/rate"
     "gopkg.in/yaml.v3"
@@ -993,6 +992,7 @@ func (q *JobQueue) runContainerGrader(job *Job, tempDir string) *JobResult {
     // Wait for completion using polling
     fmt.Printf("⏳ Waiting for grading (timeout: %v)...\n", timeout)
     
+    // Wait for container to complete with timeout (blocking)
     if err := q.waitForContainerCompletion(ctx, cli, containerID, timeout); err != nil {
         // Stop the container on timeout/error
         cli.ContainerStop(ctx, containerID, container.StopOptions{})
@@ -1051,6 +1051,42 @@ func (q *JobQueue) prepareSubmissionInSharedVolume(jobWorkspace string, submissi
     fmt.Printf("✅ Submission prepared in shared volume\n")
 
     return nil
+}
+
+// Wait for container to complete with timeout and status updates (blocking)
+func (q *JobQueue) waitForContainerCompletion(ctx context.Context, cli *client.Client, containerID string, timeout time.Duration) error {
+    
+    fmt.Printf("⏳ Waiting for container %s to complete (timeout: %v)...\n", containerID[:12], timeout)
+    
+    // Use Docker SDK's ContainerWait
+    statusCh, errCh := cli.ContainerWait(ctx, containerID, container.WaitConditionNotRunning)
+    
+    // Create a ticker for periodic status updates
+    ticker := time.NewTicker(10 * time.Second)
+    defer ticker.Stop()
+    
+    // Use a select loop to handle multiple channels
+    for {
+        select {
+        case err := <-errCh:
+            if err != nil {
+                return fmt.Errorf("error waiting for container: %v", err)
+            }
+            return nil
+            
+        case status := <-statusCh:
+            fmt.Printf("✅ Container %s completed with exit code: %d\n", containerID[:12], status.StatusCode)
+            return nil
+            
+        case <-ticker.C:
+            // Log periodic status updates
+            fmt.Printf("⏳ Container %s still running...\n", containerID[:12])
+            
+        case <-ctx.Done():
+            fmt.Printf("⏰ Container %s timed out after %v\n", containerID[:12], timeout)
+            return fmt.Errorf("container execution timed out after %v", timeout)
+        }
+    }
 }
 
 // Read results from shared volume
