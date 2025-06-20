@@ -920,11 +920,10 @@ func (q *JobQueue) performCleanup() {
 }
 
 //------------------------------------------------------------------------------
-// Container Grading Functions
+// Container Grading
 
-// Execute grading using a Docker container with volumes (simplified)
 func (q *JobQueue) runContainerGrader(job *Job, tempDir string) *JobResult {
-    
+
     // Get assignment configuration from registry
     assignmentConfig, err := getAssignmentConfig(job.AssignmentID)
     if err != nil {
@@ -944,21 +943,25 @@ func (q *JobQueue) runContainerGrader(job *Job, tempDir string) *JobResult {
     ctx, cancel := context.WithTimeout(context.Background(), timeout)
     defer cancel()
     
-    // Run grader container with BOTH bind mount (for input) and volume mount (for output)
+    // Create volume and copy submission into it
+    err = q.prepareSubmissionVolume(ctx, volumeName, job.FilePath)
+    if err != nil {
+        return &JobResult{Error: fmt.Sprintf("Failed to prepare submission: %v", err)}
+    }
+    defer q.cleanupVolume(ctx, volumeName)
+    
+    // Run grader container with volume mount only
     req := testcontainers.ContainerRequest{
         Image: assignmentConfig.Image,
         Mounts: testcontainers.Mounts(
-            // Bind mount: submission file (read-only)
-            testcontainers.BindMount(job.FilePath, "/submission/submission.zip"),
-            // Volume mount: results directory (read-write, isolated)
-            testcontainers.VolumeMount(volumeName, "/results"),
+            testcontainers.VolumeMount(volumeName, "/workspace"),
         ),
-        // The grader writes to /results/output.json
         AutoRemove: true,
     }
     
     fmt.Printf("🚀 Launching grading container for job %s...\n", job.ID)
     
+    // Start the grader container
     container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
         ContainerRequest: req,
         Started:         true,
@@ -967,27 +970,110 @@ func (q *JobQueue) runContainerGrader(job *Job, tempDir string) *JobResult {
         return &JobResult{Error: fmt.Sprintf("Failed to start grader: %v", err)}
     }
     defer container.Terminate(ctx)
-    defer q.cleanupVolume(ctx, volumeName)
     
-    // Wait for completion
+    // Wait for completion and get exit code
     fmt.Printf("⏳ Waiting for grading (timeout: %v)...\n", timeout)
-    time.Sleep(10 * time.Second)
+    
+    // Wait for the container to finish execution (blocking)
+    exitCode, err := container.Wait(ctx)
+    if err != nil {
+        return &JobResult{Error: fmt.Sprintf("Container execution failed: %v", err)}
+    }
+    
+    // Check if the container exited with an error code
+    if exitCode != 0 {
+        logs, _ := container.Logs(ctx)
+        if logs != nil {
+            logData, _ := io.ReadAll(logs)
+            logs.Close()
+            return &JobResult{Error: fmt.Sprintf("Grader exited with code %d: %s", exitCode, string(logData))}
+        }
+        return &JobResult{Error: fmt.Sprintf("Grader exited with code %d", exitCode)}
+    }
     
     // Read results from volume
     return q.readResultsFromVolume(ctx, volumeName)
 }
 
-// Read results from the job volume (simplified)
-func (q *JobQueue) readResultsFromVolume(ctx context.Context, volumeName string) *JobResult {
+// Prepare the submission volume with the student's submission
+func (q *JobQueue) prepareSubmissionVolume(ctx context.Context, volumeName string, submissionPath string) error {
+
+    fmt.Printf("📦 Preparing submission in volume %s...\n", volumeName)
+    
+    // Read the submission file
+    submissionData, err := os.ReadFile(submissionPath)
+    if err != nil {
+        return fmt.Errorf("failed to read submission file: %v", err)
+    }
+    
+    // Encode submission data to base64 for safe transfer
+    encodedSubmission := base64.StdEncoding.EncodeToString(submissionData)
+    
+    // Create a volume for the submission
     req := testcontainers.ContainerRequest{
         Image: "alpine:latest",
-        Cmd:   []string{"cat", "/results/output.json"},
+        Cmd: []string{"sh", "-c", fmt.Sprintf(`
+            echo "Setting up workspace..."
+            mkdir -p /workspace/submission /workspace/results
+            echo "%s" | base64 -d > /workspace/submission/submission.zip
+            echo "Submission prepared: $(ls -la /workspace/submission/)"
+            echo "Ready for grading"
+        `, encodedSubmission)},
         Mounts: testcontainers.Mounts(
-            testcontainers.VolumeMount(volumeName, "/results"),
+            testcontainers.VolumeMount(volumeName, "/workspace"),
         ),
         AutoRemove: true,
     }
     
+    // Create and start the container to prepare the submission
+    container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+        ContainerRequest: req,
+        Started:         true,
+    })
+    if err != nil {
+        return fmt.Errorf("failed to create prep container: %v", err)
+    }
+    defer container.Terminate(ctx)
+    
+    // Wait for the container to finish execution (blocking)
+    exitCode, err := container.Wait(ctx)
+    if err != nil || exitCode != 0 {
+        return fmt.Errorf("failed to prepare submission (exit: %d): %v", exitCode, err)
+    }
+    
+    fmt.Printf("✅ Submission prepared in volume\n")
+
+    return nil
+}
+
+// Read results from the grading volume and parse the output
+func (q *JobQueue) readResultsFromVolume(ctx context.Context, volumeName string) *JobResult {
+
+    fmt.Printf("📖 Reading results from volume %s...\n", volumeName)
+    
+    // Create a container to read the results
+    req := testcontainers.ContainerRequest{
+        Image: "alpine:latest",
+        Cmd: []string{"sh", "-c", `
+            if [ -f /workspace/results/output.json ]; then
+                echo "=== GRADING_RESULTS_START ==="
+                cat /workspace/results/output.json
+                echo "=== GRADING_RESULTS_END ==="
+            else
+                echo "=== GRADING_RESULTS_START ==="
+                echo '{"error": "No output.json found in results directory"}'
+                echo "=== GRADING_RESULTS_END ==="
+                echo "Available files:" >&2
+                ls -la /workspace/results/ >&2 || echo "Results directory not found" >&2
+            fi
+        `},
+        Mounts: testcontainers.Mounts(
+            testcontainers.VolumeMount(volumeName, "/workspace"),
+        ),
+        AutoRemove: true,
+    }
+    
+    // Start the container to read results
     container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
         ContainerRequest: req,
         Started:         true,
@@ -997,31 +1083,52 @@ func (q *JobQueue) readResultsFromVolume(ctx context.Context, volumeName string)
     }
     defer container.Terminate(ctx)
     
-    time.Sleep(1 * time.Second)
+    // Wait for the container to finish execution (blocking)
+    container.Wait(ctx)
+    
+    // Get the logs from the container
     logs, err := container.Logs(ctx)
     if err != nil {
         return &JobResult{Error: fmt.Sprintf("Failed to get results: %v", err)}
     }
     defer logs.Close()
     
+    // Read the logs to get the grading results
     resultData, err := io.ReadAll(logs)
     if err != nil {
         return &JobResult{Error: fmt.Sprintf("Failed to read result data: %v", err)}
     }
     
+    // Parse the result data
+    resultStr := string(resultData)
+    startMarker := "=== GRADING_RESULTS_START ==="
+    endMarker := "=== GRADING_RESULTS_END ==="
+    
+    // Find the start and end markers in the result string
+    startIdx := strings.Index(resultStr, startMarker)
+    endIdx := strings.Index(resultStr, endMarker)
+    
+    // Validate markers
+    if startIdx == -1 || endIdx == -1 {
+        return &JobResult{Error: fmt.Sprintf("Invalid result format: %s", resultStr)}
+    }
+    
+    // Extract the JSON string between the markers
+    jsonStr := strings.TrimSpace(resultStr[startIdx+len(startMarker):endIdx])
+    
+    // Parse the JSON result
     var result JobResult
-    err = json.Unmarshal(resultData, &result)
+    err = json.Unmarshal([]byte(jsonStr), &result)
     if err != nil {
-        return &JobResult{Error: fmt.Sprintf("Invalid results JSON: %s", string(resultData))}
+        return &JobResult{Error: fmt.Sprintf("Invalid results JSON: %s", jsonStr)}
+    }
+    if result.Error != "" {
+        return &result
     }
     
     fmt.Printf("✅ Container grading complete: Score %.1f\n", result.Score)
+    
     return &result
-}
-
-func (q *JobQueue) cleanupVolume(ctx context.Context, volumeName string) {
-    fmt.Printf("🗑️  Volume %s marked for cleanup\n", volumeName)
-    // Docker will clean up unused volumes automatically
 }
 
 //------------------------------------------------------------------------------

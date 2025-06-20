@@ -25,4 +25,9 @@ USER grader
 WORKDIR /workspace
 
 # Use argument-based interface: submission_path, original_filename, work_dir
-ENTRYPOINT ["/grader.py", "/submission/submission.zip", "submission.zip", "/workspace"]
+ENTRYPOINT [
+    "/grader.py", 
+    "/workspace/submission/submission.zip", 
+    "submission.zip", 
+    "/workspace/extracted"
+]
