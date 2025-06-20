@@ -911,7 +911,6 @@ func (q *JobQueue) runContainerGrader(tempDir, submissionPath, originalFilename 
             testcontainers.BindMount(resultDir, "/results"),
         ),
         AutoRemove: true,
-        WaitingFor: wait.ForExit(),
     }
     
     // Start container
