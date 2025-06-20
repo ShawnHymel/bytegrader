@@ -903,7 +903,7 @@ func (q *JobQueue) runContainerGrader(tempDir, submissionPath, originalFilename 
     fmt.Printf("🔧 Resource limits: %dMB RAM, %.2f CPU cores, %d processes\n", 
         memoryLimit/(1024*1024), float64(cpuQuota)/100000, pidsLimit)
 
-    // Create container request
+    // Create container request (basic version first) ***TODO: Add resource limits***
     req := testcontainers.ContainerRequest{
         Image: assignmentConfig.Image,
         Mounts: testcontainers.Mounts(
@@ -911,12 +911,7 @@ func (q *JobQueue) runContainerGrader(tempDir, submissionPath, originalFilename 
             testcontainers.BindMount(resultDir, "/results"),
         ),
         AutoRemove: true,
-        Resources: container.Resources{
-            Memory:    memoryLimit,
-            CPUQuota:  cpuQuota,
-            CPUPeriod: 100000, // 100ms period (standard)
-            PidsLimit: pidsLimit,
-        },
+        WaitingFor: wait.ForExit(),
     }
     
     // Start container
