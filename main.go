@@ -783,7 +783,7 @@ func (q *JobQueue) processJob(jobID string) *JobResult {
     }
 
     // Run Python grading script in a container
-    return q.runContainerGrader(tempDir, submissionPath, job.Filename)
+    return q.runContainerGrader(job, tempDir)
 }
 
 // Copy a file from src to dst
@@ -844,22 +844,7 @@ func getAssignmentConfig(assignmentID string) (*AssignmentConfig, error) {
 }
 
 // Execute grading using a Docker container
-func (q *JobQueue) runContainerGrader(tempDir, submissionPath, originalFilename string) *JobResult {
-
-    // Find the job to get assignment ID
-    var job *Job
-    q.mutex.RLock()
-    for _, j := range q.jobs {
-        if j.FilePath != "" && strings.Contains(submissionPath, j.ID) {
-            job = j
-            break
-        }
-    }
-    q.mutex.RUnlock()
-    
-    if job == nil {
-        return &JobResult{Error: "Job not found for grading"}
-    }
+func (q *JobQueue) runContainerGrader(job *Job, tempDir string) *JobResult {
     
     // Get assignment configuration from registry
     assignmentConfig, err := getAssignmentConfig(job.AssignmentID)
@@ -867,6 +852,8 @@ func (q *JobQueue) runContainerGrader(tempDir, submissionPath, originalFilename 
         return &JobResult{Error: fmt.Sprintf("Assignment configuration error: %v", err)}
     }
     
+    // Log grading start
+    fmt.Printf("📁 Mounting submission from: %s\n", job.FilePath)
     fmt.Printf("🐳 Starting container grading with image: %s\n", assignmentConfig.Image)
     
     // Create result directory

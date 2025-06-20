@@ -44,6 +44,46 @@ docker run --rm -v "$(pwd)/test/submission-make-c-hello.zip:/submission/submissi
 
 When you run the image, it will read in the *submission-make-c-hello.zip* file, rename to *submission.zip* in the container, process it with *grader.py*, and store the results in *test/results* as *output.json*. Note that *test-stub* does not actually build or run any submitted code. It simply verifies that the file is a *.zip* archive and returns a constant score and feedback.
 
+## Update Process
+
+Once the server is running, you can update ByteGrader (with minimal downtime) by logging into the server as the *bytegrader* user, stopping the container, updating the repository, and then calling the *deploy.sh* script again. Don't forget to give the script the location of your *app* directory!
+
+```sh
+ssh bytegrader@<SUBDOMAIN>.<DOMAIN>
+cd ~/app
+docker compose down
+cd ~/bytegrader
+git pull
+./deploy/deploy.sh ~/app
+```
+
+Verify that the server is running with:
+
+```sh
+curl http://localhost:8080/health
+```
+
+## Test Grading
+
+From your home/office computer (assuming you've whitelisted your public IP address), you can test submitting a dummy file for grading using the *test-stub* grader (which always returns a static grade/feedback so long as it receives a valid .zip file).
+
+```sh
+curl -X POST -H "X-API-Key: <API_KEY>" -F "file=@test/submission-make-c-hello.zip" https://<SUBDOMAIN>.<DOMAIN>/submit?assignment=test-stub
+```
+
+You should receive a "File submitted for grading" JSON message back from the server. Copy the *job_id* and check the status of the grading job:
+
+```sh
+curl -H "X-API-Key: <API_KEY>" https://<SUBDOMAIN>.<DOMAIN>/status/<JOB_ID>
+```
+
+You can watch the real-time logs of the server with:
+
+```sh
+cd /home/bytegrader/app
+docker compose logs -f
+```
+
 ## Notes
 
 ### Check Logs
