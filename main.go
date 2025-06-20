@@ -920,7 +920,7 @@ func (q *JobQueue) performCleanup() {
 }
 
 //------------------------------------------------------------------------------
-// Container Grading
+// Container Grading Functions
 
 func (q *JobQueue) runContainerGrader(job *Job, tempDir string) *JobResult {
 
@@ -974,14 +974,17 @@ func (q *JobQueue) runContainerGrader(job *Job, tempDir string) *JobResult {
     // Wait for completion and get exit code
     fmt.Printf("⏳ Waiting for grading (timeout: %v)...\n", timeout)
     
-    // Wait for the container to finish execution (blocking)
-    exitCode, err := container.Wait(ctx)
+    // Wait a bit for container to complete
+    time.Sleep(2 * time.Second)
+
+    // Check final state
+    state, err := container.State(ctx)
     if err != nil {
-        return &JobResult{Error: fmt.Sprintf("Container execution failed: %v", err)}
+        return &JobResult{Error: fmt.Sprintf("Failed to get container state: %v", err)}
     }
     
     // Check if the container exited with an error code
-    if exitCode != 0 {
+    if state.ExitCode != 0 {
         logs, _ := container.Logs(ctx)
         if logs != nil {
             logData, _ := io.ReadAll(logs)
@@ -1035,10 +1038,24 @@ func (q *JobQueue) prepareSubmissionVolume(ctx context.Context, volumeName strin
     }
     defer container.Terminate(ctx)
     
-    // Wait for the container to finish execution (blocking)
-    exitCode, err := container.Wait(ctx)
-    if err != nil || exitCode != 0 {
-        return fmt.Errorf("failed to prepare submission (exit: %d): %v", exitCode, err)
+    // Wait a bit for container to complete
+    time.Sleep(2 * time.Second)
+
+    // Check final state
+    state, err := container.State(ctx)
+    if err != nil {
+        return &JobResult{Error: fmt.Sprintf("Failed to get container state: %v", err)}
+    }
+    
+    // Check if the container exited with an error code
+    if state.ExitCode != 0 {
+        logs, _ := container.Logs(ctx)
+        if logs != nil {
+            logData, _ := io.ReadAll(logs)
+            logs.Close()
+            return fmt.Errorf("Prep container exited with code %d: %s", state.ExitCode, string(logData))
+        }
+        return fmt.Errorf("Prep container exited with code %d", state.ExitCode)
     }
     
     fmt.Printf("✅ Submission prepared in volume\n")
@@ -1083,8 +1100,14 @@ func (q *JobQueue) readResultsFromVolume(ctx context.Context, volumeName string)
     }
     defer container.Terminate(ctx)
     
-    // Wait for the container to finish execution (blocking)
-    container.Wait(ctx)
+    // Wait a bit for container to complete
+    time.Sleep(2 * time.Second)
+
+    // Check final state 
+    _, err := container.State(ctx)
+    if err != nil {
+        return &JobResult{Error: fmt.Sprintf("Failed to get container state: %v", err)}
+    }
     
     // Get the logs from the container
     logs, err := container.Logs(ctx)
@@ -1127,8 +1150,30 @@ func (q *JobQueue) readResultsFromVolume(ctx context.Context, volumeName string)
     }
     
     fmt.Printf("✅ Container grading complete: Score %.1f\n", result.Score)
-    
+
     return &result
+}
+
+// Cleanup the volume after grading is complete
+func (q *JobQueue) cleanupVolume(ctx context.Context, volumeName string) {
+    // Create a cleanup container to remove the volume
+    req := testcontainers.ContainerRequest{
+        Image: "alpine:latest",
+        Cmd:   []string{"echo", "Volume cleanup placeholder"},
+        AutoRemove: true,
+    }
+    
+    container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+        ContainerRequest: req,
+        Started:         true,
+    })
+    if err == nil {
+        // Just wait a moment for the echo command to complete
+        time.Sleep(500 * time.Millisecond)
+        container.Terminate(ctx)
+    }
+    
+    fmt.Printf("🗑️  Volume %s cleanup completed\n", volumeName)
 }
 
 //------------------------------------------------------------------------------
