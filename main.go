@@ -17,7 +17,6 @@ import (
     "time"
 
     "github.com/google/uuid"
-    "github.com/docker/docker/api/types"
     "github.com/docker/docker/api/types/container"
     "github.com/docker/docker/api/types/mount"
     "github.com/docker/docker/api/types/volume"
