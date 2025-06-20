@@ -1045,7 +1045,7 @@ func (q *JobQueue) prepareSubmissionVolume(ctx context.Context, volumeName strin
     // Check final state
     state, err := container.State(ctx)
     if err != nil {
-        return &JobResult{Error: fmt.Sprintf("Failed to get container state: %v", err)}
+        return fmt.Errorf("failed to get container state: %v", err)
     }
     
     // Check if the container exited with an error code
