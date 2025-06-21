@@ -2,6 +2,15 @@ services:
   ${COURSE_SUBDOMAIN}-grader:
     build: .
     container_name: bytegrader-${COURSE_SUBDOMAIN}
+
+    # Entrypoint hack to change permissions of the volume mount
+    command: >
+      sh -c "
+        chown -R 1000:988 /workspace &&
+        chmod -R 755 /workspace &&
+        exec ./bytegrader-api
+      "
+    
     ports:
       - "127.0.0.1:8080:8080"
       
@@ -64,6 +73,4 @@ services:
 
 volumes:
   bytegrader-workspace:
-    driver: local
-    driver_opts:
-      o: "uid=1000,gid=988"
+    # Let Docker manage this volume
