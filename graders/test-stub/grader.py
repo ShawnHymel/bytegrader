@@ -139,7 +139,7 @@ def main():
         print(f"   Work dir: {work_dir}", file=sys.stderr)
         print(f"   Results: {results_dir}", file=sys.stderr)
 
-    # Debug: List what's actually in the working directory
+    # ***Debug: List what's actually in the working directory
     if os.getenv("BYTEGRADER_VOLUME_MODE") == "true":
         print(f"📂 Contents of {work_dir}:", file=sys.stderr)
         try:
@@ -157,6 +157,16 @@ def main():
                     print(f"   📄 {item}", file=sys.stderr)
         except Exception as e:
             print(f"   ❌ Error listing directory: {e}", file=sys.stderr)
+
+    # ***Debug: Check volume mount info
+    print(f"📂 Volume mount info:", file=sys.stderr)
+    try:
+        with open('/proc/mounts', 'r') as f:
+            for line in f:
+                if '/workspace' in line:
+                    print(f"   {line.strip()}", file=sys.stderr)
+    except:
+        print(f"   Could not read mount info", file=sys.stderr)
 
     # Validate the submission, work directory, and results directory
     if not os.path.isfile(submission_path):

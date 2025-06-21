@@ -206,7 +206,7 @@ func rateLimitMiddleware(next http.HandlerFunc) http.HandlerFunc {
         clientIP := getClientIP(r)
         limiter := rateLimitManager.getLimiter(clientIP)
         
-        // Debug: Show current limiter state
+        // ***Debug: Show current limiter state
         fmt.Printf("🚦 Rate check for IP %s: tokens=%.2f, limit=%.4f\n", 
             clientIP, limiter.Tokens(), float64(limiter.Limit()))
         
@@ -340,7 +340,7 @@ func validateSourceIP(r *http.Request) bool {
 // securityMiddleware applies all security checks to requests
 func securityMiddleware(next http.HandlerFunc) http.HandlerFunc {
     return func(w http.ResponseWriter, r *http.Request) {
-        // Debug logging
+        // ***Debug logging
         clientIP := getClientIP(r)
         fmt.Printf("🔍 Security check for %s %s from IP: %s\n", r.Method, r.URL.Path, clientIP)
         fmt.Printf("   API Key Required: %v\n", config.RequireAPIKey)
@@ -589,7 +589,7 @@ func submitHandler(w http.ResponseWriter, r *http.Request) {
 
     fmt.Printf("📁 File saved: %s (Job: %s)\n", filePath, jobID)
 
-    // Debug: verify the file structure was created correctly
+    // ***Debug: verify the file structure was created correctly
     if _, err := os.Stat(filepath.Join(jobWorkspace, "submission", "submission.zip")); err != nil {
         fmt.Printf("⚠️  Submission file missing: %v\n", err)
     } else {
@@ -1033,6 +1033,30 @@ func (q *JobQueue) runContainerGrader(job *Job, tempDir string) *JobResult {
         return &JobResult{Error: fmt.Sprintf("Failed to create Docker client: %v", err)}
     }
     defer cli.Close()
+
+    // ***Debug: Check if files exist in ByteGrader container before starting grader
+    fmt.Printf("🔍 Checking files in ByteGrader container:\n")
+    if _, err := os.Stat(fmt.Sprintf("/workspace/jobs/%s", job.ID)); err != nil {
+        fmt.Printf("   ❌ Job workspace doesn't exist: %v\n", err)
+    } else {
+        fmt.Printf("   ✅ Job workspace exists\n")
+        
+        submissionPath := fmt.Sprintf("/workspace/jobs/%s/submission/submission.zip", job.ID)
+        if _, err := os.Stat(submissionPath); err != nil {
+            fmt.Printf("   ❌ Submission file missing: %v\n", err)
+        } else {
+            if info, err := os.Stat(submissionPath); err == nil {
+                fmt.Printf("   ✅ Submission file exists (size: %d bytes)\n", info.Size())
+            }
+        }
+        
+        resultsPath := fmt.Sprintf("/workspace/jobs/%s/results", job.ID)
+        if _, err := os.Stat(resultsPath); err != nil {
+            fmt.Printf("   ❌ Results directory missing: %v\n", err)
+        } else {
+            fmt.Printf("   ✅ Results directory exists\n")
+        }
+    }
     
     // Create grader container with volume mount and environment detection
     resp, err := cli.ContainerCreate(
@@ -1342,7 +1366,7 @@ func main() {
     fmt.Printf("   API Key Required: %v\n", config.RequireAPIKey)
     if config.RequireAPIKey {
         fmt.Printf("   Valid API Keys: %d configured\n", len(config.ValidAPIKeys))
-        // Debug: Print first few characters of each key for verification
+        // ***Debug: Print first few characters of each key for verification
         for i, key := range config.ValidAPIKeys {
             if len(key) > 3 {
                 fmt.Printf("     Key %d: %s... (%d chars)\n", i+1, key[:3], len(key))
