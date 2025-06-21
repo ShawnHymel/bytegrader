@@ -1050,7 +1050,7 @@ func (q *JobQueue) runContainerGrader(job *Job, tempDir string) *JobResult {
                     Target: "/workspace",
                 },
             },
-            AutoRemove: true,
+            AutoRemove: false, // ***TODO: Set to true in production to avoid leftover containers***
             Resources: container.Resources{
                 Memory:   int64(assignmentConfig.Resources.MemoryMB) * 1024 * 1024,
                 NanoCPUs: int64(assignmentConfig.Resources.CPULimit * 1e9),
