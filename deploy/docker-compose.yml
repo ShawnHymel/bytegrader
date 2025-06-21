@@ -66,3 +66,7 @@ services:
 volumes:
   bytegrader-workspace:
     driver: local
+    driver_opts:
+      type: none
+      device: ./workspace
+      o: bind

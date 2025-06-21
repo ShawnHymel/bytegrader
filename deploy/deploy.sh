@@ -97,7 +97,10 @@ envsubst < "$REPO_DIR/deploy/docker-compose.yml" > docker-compose.yml
 cp "$REPO_DIR/deploy/Dockerfile" .
 
 # Create other necessary directories
-mkdir -p uploads logs
+mkdir -p uploads logs workspace
+
+# Set correct permissions for workspace
+chown -R "$DOCKER_USER_ID:$DOCKER_GROUP_ID" workspace || true
 
 # Build grader images
 echo "🔨 Building grader images..."

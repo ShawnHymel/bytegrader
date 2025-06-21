@@ -705,6 +705,8 @@ func (q *JobQueue) updateJob(jobID string, status string, result *JobResult) {
 
 // Worker that processes jobs one by one
 func (q *JobQueue) startWorker() {
+
+    // Start the worker only if not already running
     q.isRunning = true
     fmt.Printf("🔄 Worker started - processing jobs (max concurrent: %d)...\n", config.MaxConcurrentJobs)
     
