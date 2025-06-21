@@ -1007,23 +1007,34 @@ func (q *JobQueue) runContainerGrader(job *Job, tempDir string) *JobResult {
         return &JobResult{Error: fmt.Sprintf("Failed to inspect container: %v", err)}
     }
     
+    // Always try to read results first, regardless of exit code
+    result := q.readResultsFromSharedVolume(jobWorkspace)
+
     // Check if the container exited with an error code
     exitCode := inspect.State.ExitCode
     if exitCode != 0 {
-        logs, _ := cli.ContainerLogs(ctx, containerID, container.LogsOptions{
-            ShowStdout: true,
-            ShowStderr: true,
-        })
-        if logs != nil {
-            logData, _ := io.ReadAll(logs)
-            logs.Close()
-            return &JobResult{Error: fmt.Sprintf("Grader exited with code %d: %s", exitCode, string(logData))}
+        fmt.Printf("⚠️  Container %s exited with code %d\n", containerID[:12], exitCode)
+        
+        // If we got valid results from output.json, use those (even on non-zero exit)
+        if result.Error == "" || result.Error == "No output.json found in results directory" {
+            // No valid results file, fall back to container logs
+            logs, _ := cli.ContainerLogs(ctx, containerID, container.LogsOptions{
+                ShowStdout: true,
+                ShowStderr: true,
+            })
+            if logs != nil {
+                logData, _ := io.ReadAll(logs)
+                logs.Close()
+                return &JobResult{Error: fmt.Sprintf("Grader exited with code %d: %s", exitCode, string(logData))}
+            }
+            return &JobResult{Error: fmt.Sprintf("Grader exited with code %d", exitCode)}
         }
-        return &JobResult{Error: fmt.Sprintf("Grader exited with code %d", exitCode)}
+        
+        // We have valid results from output.json, use them even though exit code was non-zero
+        fmt.Printf("📋 Using results from output.json despite non-zero exit code\n")
     }
-    
-    // Read results from shared volume
-    return q.readResultsFromSharedVolume(jobWorkspace)
+
+    return result
 }
 
 // Prepare submission in shared volume (no containers needed)
