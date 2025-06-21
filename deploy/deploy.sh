@@ -63,12 +63,17 @@ cp "$REPO_DIR/go.mod" .
 cp "$REPO_DIR/go.sum" .
 
 # Get current user and docker group IDs for container permissions
-export DOCKER_USER_ID=$(id -u)
+if [ -n "$SUDO_USER" ]; then
+    # Script was run with sudo, get the real user's ID
+    export DOCKER_USER_ID=$(id -u "$SUDO_USER")
+else
+    # Script was run directly
+    export DOCKER_USER_ID=$(id -u)
+fi
 export DOCKER_GROUP_ID=$(getent group docker | cut -d: -f3)
 
-echo "🔧 Setting container permissions:"
-echo "   User ID: $DOCKER_USER_ID"
-echo "   Docker Group ID: $DOCKER_GROUP_ID"
+echo "🔧 Using User ID: $DOCKER_USER_ID ($(id -un $DOCKER_USER_ID 2>/dev/null || echo "unknown"))"
+echo "🔧 Using Docker Group ID: $DOCKER_GROUP_ID"
 
 echo "📂 Copying and configuring deployment files..."
 
