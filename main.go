@@ -589,6 +589,19 @@ func submitHandler(w http.ResponseWriter, r *http.Request) {
 
     fmt.Printf("📁 File saved: %s (Job: %s)\n", filePath, jobID)
 
+    // Debug: verify the file structure was created correctly
+    if _, err := os.Stat(filepath.Join(jobWorkspace, "submission", "submission.zip")); err != nil {
+        fmt.Printf("⚠️  Submission file missing: %v\n", err)
+    } else {
+        fmt.Printf("✅ Submission file exists\n")
+    }
+
+    if _, err := os.Stat(filepath.Join(jobWorkspace, "results")); err != nil {
+        fmt.Printf("⚠️  Results directory missing: %v\n", err)
+    } else {
+        fmt.Printf("✅ Results directory exists\n")
+    }
+
     // Return job ID immediately
     response := SubmitResponse{
         JobID:   jobID,
@@ -1085,6 +1098,19 @@ func (q *JobQueue) runContainerGrader(job *Job, tempDir string) *JobResult {
         return &JobResult{Error: fmt.Sprintf("Failed to inspect container: %v", err)}
     }
     
+    // Always get container logs for debugging
+    logs, err := cli.ContainerLogs(ctx, containerID, container.LogsOptions{
+        ShowStdout: true,
+        ShowStderr: true,
+    })
+    if err == nil && logs != nil {
+        logData, _ := io.ReadAll(logs)
+        logs.Close()
+        fmt.Printf("📋 Container logs:\n%s\n", string(logData))
+    } else {
+        fmt.Printf("⚠️  Could not retrieve container logs: %v\n", err)
+    }
+
     // Always try to read results first, regardless of exit code
     result := q.readResultsFromSharedVolume(jobWorkspace)
 
