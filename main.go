@@ -203,13 +203,11 @@ func rateLimitMiddleware(next http.HandlerFunc) http.HandlerFunc {
             return
         }
         
+        // Get limiter information
         clientIP := getClientIP(r)
         limiter := rateLimitManager.getLimiter(clientIP)
         
-        // ***Debug: Show current limiter state
-        fmt.Printf("🚦 Rate check for IP %s: tokens=%.2f, limit=%.4f\n", 
-            clientIP, limiter.Tokens(), float64(limiter.Limit()))
-        
+        // Show if rate limit exceeded for IP address
         if !limiter.Allow() {
             fmt.Printf("❌ Rate limit exceeded for IP: %s\n", clientIP)
             w.WriteHeader(http.StatusTooManyRequests)
@@ -219,9 +217,6 @@ func rateLimitMiddleware(next http.HandlerFunc) http.HandlerFunc {
             })
             return
         }
-        
-        fmt.Printf("✅ Rate limit passed for IP: %s (tokens remaining: %.2f)\n", 
-            clientIP, limiter.Tokens())
         
         next(w, r)
     }
@@ -337,16 +332,12 @@ func validateSourceIP(r *http.Request) bool {
     return false
 }
 
-// securityMiddleware applies all security checks to requests
+// Apply security checks to requests
 func securityMiddleware(next http.HandlerFunc) http.HandlerFunc {
     return func(w http.ResponseWriter, r *http.Request) {
-        // ***Debug logging
         clientIP := getClientIP(r)
-        fmt.Printf("🔍 Security check for %s %s from IP: %s\n", r.Method, r.URL.Path, clientIP)
-        fmt.Printf("   API Key Required: %v\n", config.RequireAPIKey)
-        fmt.Printf("   X-API-Key header: '%s'\n", r.Header.Get("X-API-Key"))
         
-        // 1. Set CORS headers for browser compatibility
+        // Set CORS headers for browser compatibility
         setCORSHeaders(w)
         
         // Handle preflight requests
@@ -355,7 +346,7 @@ func securityMiddleware(next http.HandlerFunc) http.HandlerFunc {
             return
         }
         
-        // 2. Check IP whitelist (primary security)
+        // Check IP whitelist (primary security)
         if !validateSourceIP(r) {
             fmt.Printf("❌ IP validation failed for %s %s from %s\n", r.Method, r.URL.Path, clientIP)
             w.WriteHeader(http.StatusForbidden)
@@ -363,7 +354,7 @@ func securityMiddleware(next http.HandlerFunc) http.HandlerFunc {
             return
         }
         
-        // 3. Check API key (authentication)
+        // Check API key (authentication)
         if !authenticateRequest(r) {
             fmt.Printf("❌ Authentication failed for %s %s\n", r.Method, r.URL.Path)
             w.WriteHeader(http.StatusUnauthorized)
@@ -523,21 +514,6 @@ func submitHandler(w http.ResponseWriter, r *http.Request) {
     }
     fmt.Printf("✅ File size OK\n")
 
-    // ***DEBUG: Check if /workspace exists first
-    fmt.Printf("🔍 Checking if /workspace exists\n")
-    if _, err := os.Stat("/workspace"); os.IsNotExist(err) {
-        fmt.Printf("❌ /workspace directory does not exist!\n")
-        w.WriteHeader(http.StatusInternalServerError)
-        json.NewEncoder(w).Encode(ErrorResponse{Error: "/workspace directory not mounted"})
-        return
-    } else if err != nil {
-        fmt.Printf("❌ Error checking /workspace: %v\n", err)
-        w.WriteHeader(http.StatusInternalServerError)
-        json.NewEncoder(w).Encode(ErrorResponse{Error: fmt.Sprintf("Error accessing workspace: %v", err)})
-        return
-    }
-    fmt.Printf("✅ /workspace exists\n")
-
     // Create job ID and workspace
     jobID := generateJobID()
     jobWorkspace := fmt.Sprintf("/workspace/jobs/%s", jobID)
@@ -619,19 +595,6 @@ func submitHandler(w http.ResponseWriter, r *http.Request) {
     jobQueue.addJob(job)
 
     fmt.Printf("📁 File saved: %s (Job: %s)\n", filePath, jobID)
-
-    // ***Debug: verify the file structure was created correctly
-    if _, err := os.Stat(filepath.Join(jobWorkspace, "submission", "submission.zip")); err != nil {
-        fmt.Printf("⚠️  Submission file missing: %v\n", err)
-    } else {
-        fmt.Printf("✅ Submission file exists\n")
-    }
-
-    if _, err := os.Stat(filepath.Join(jobWorkspace, "results")); err != nil {
-        fmt.Printf("⚠️  Results directory missing: %v\n", err)
-    } else {
-        fmt.Printf("✅ Results directory exists\n")
-    }
 
     // Return job ID immediately
     response := SubmitResponse{
@@ -1064,30 +1027,6 @@ func (q *JobQueue) runContainerGrader(job *Job, tempDir string) *JobResult {
         return &JobResult{Error: fmt.Sprintf("Failed to create Docker client: %v", err)}
     }
     defer cli.Close()
-
-    // ***Debug: Check if files exist in ByteGrader container before starting grader
-    fmt.Printf("🔍 Checking files in ByteGrader container:\n")
-    if _, err := os.Stat(fmt.Sprintf("/workspace/jobs/%s", job.ID)); err != nil {
-        fmt.Printf("   ❌ Job workspace doesn't exist: %v\n", err)
-    } else {
-        fmt.Printf("   ✅ Job workspace exists\n")
-        
-        submissionPath := fmt.Sprintf("/workspace/jobs/%s/submission/submission.zip", job.ID)
-        if _, err := os.Stat(submissionPath); err != nil {
-            fmt.Printf("   ❌ Submission file missing: %v\n", err)
-        } else {
-            if info, err := os.Stat(submissionPath); err == nil {
-                fmt.Printf("   ✅ Submission file exists (size: %d bytes)\n", info.Size())
-            }
-        }
-        
-        resultsPath := fmt.Sprintf("/workspace/jobs/%s/results", job.ID)
-        if _, err := os.Stat(resultsPath); err != nil {
-            fmt.Printf("   ❌ Results directory missing: %v\n", err)
-        } else {
-            fmt.Printf("   ✅ Results directory exists\n")
-        }
-    }
     
     // Create grader container with volume mount and environment detection
     resp, err := cli.ContainerCreate(
@@ -1106,7 +1045,7 @@ func (q *JobQueue) runContainerGrader(job *Job, tempDir string) *JobResult {
                     Target: "/workspace",
                 },
             },
-            AutoRemove: false, // ***TODO IMPORTANT FIX THIS SERIOUSLY: Set to true in production to avoid leftover containers***
+            AutoRemove: true, // Automatically remove container after exit
             Resources: container.Resources{
                 Memory:   int64(assignmentConfig.Resources.MemoryMB) * 1024 * 1024,
                 NanoCPUs: int64(assignmentConfig.Resources.CPULimit * 1e9),
@@ -1397,7 +1336,6 @@ func main() {
     fmt.Printf("   API Key Required: %v\n", config.RequireAPIKey)
     if config.RequireAPIKey {
         fmt.Printf("   Valid API Keys: %d configured\n", len(config.ValidAPIKeys))
-        // ***Debug: Print first few characters of each key for verification
         for i, key := range config.ValidAPIKeys {
             if len(key) > 3 {
                 fmt.Printf("     Key %d: %s... (%d chars)\n", i+1, key[:3], len(key))
