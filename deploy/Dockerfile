@@ -34,9 +34,10 @@ RUN pip install --no-cache-dir python-magic
 # Create app user
 RUN groupadd -r bytegrader && useradd -r -g bytegrader bytegrader
 
-# Create directories
-RUN mkdir -p /app /tmp/uploads /usr/local/bin/graders \
-    && chown -R bytegrader:bytegrader /app /tmp/uploads
+# Create directories and set permissions
+RUN mkdir -p /app /tmp/uploads /usr/local/bin/graders /workspace/jobs \
+    && chown -R bytegrader:bytegrader /app /tmp/uploads /workspace \
+    && chmod -R 755 /workspace
 
 # Copy the Go binary from builder stage
 COPY --from=builder /app/bytegrader-api /app/
