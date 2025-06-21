@@ -76,6 +76,20 @@ def safe_extract(zip_path, extract_to, max_size, allowed_file_types=None):
         # If all checks pass, extract the files
         zip_ref.extractall(extract_to)
 
+def write_results_and_exit(result, exit_code=0):
+    """Write results to output.json and exit with specified code"""
+    try:
+        # Write results to working directory for Go app to read
+        with open('output.json', 'w') as f:
+            json.dump(result, f, indent=2)
+        print(f"✅ Results written to output.json", file=sys.stderr)
+    except Exception as e:
+        print(f"⚠️  Failed to write output.json: {e}", file=sys.stderr)
+    
+    # Output JSON result to stdout (for direct testing)
+    print(json.dumps(result, indent=2))
+    sys.exit(exit_code)
+
 def main():
     """
     Main function for the autograder script.
@@ -95,8 +109,7 @@ def main():
             "error": f"Usage: python3 grader.py <submission_path> <work_dir>\n" +
                     f"Got {len(sys.argv)-1} arguments, expected 2"
         }
-        print(json.dumps(result), file=sys.stderr)
-        sys.exit(1)
+        write_results_and_exit(result, 1)
 
     # Extract original filename from submission path
     submission_path = sys.argv[1]
@@ -124,8 +137,7 @@ def main():
     except Exception as e:
         result["error"] = f"Extraction failed: {str(e)}"
         print(f"❌ Extraction error: {e}", file=sys.stderr)
-        print(json.dumps(result, indent=2))
-        sys.exit(1)
+        write_results_and_exit(result, 1)
 
     # Simulate some grading time
     print(f"🔬 Grading {original_filename}...", file=sys.stderr)
@@ -138,12 +150,8 @@ def main():
     # Log the result
     print(f"✅ Grading complete. Score: {result['score']}/{result['max_score']}", file=sys.stderr)
     
-    # Output JSON result to stdout (for direct testing and Go app parsing)
-    print(json.dumps(result, indent=2))
-
-    # Write results to working directory for Go app to read
-    with open('output.json', 'w') as f:
-        json.dump(result, f, indent=2)
+    # Write results to output.json and exit
+    write_results_and_exit(result, 0)
 
 if __name__ == "__main__":
     main()
