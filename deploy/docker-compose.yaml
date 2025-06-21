@@ -21,7 +21,6 @@ services:
       - MAX_FILE_SIZE_MB=${BYTEGRADER_MAX_FILE_SIZE_MB:-50}
       - GRADING_TIMEOUT_MIN=${BYTEGRADER_GRADING_TIMEOUT_MIN:-10}
       - MAX_CONCURRENT_JOBS=${BYTEGRADER_MAX_CONCURRENT_JOBS:-2}
-      - UPLOADS_DIR=/tmp/uploads
       - GRADING_SCRIPTS_DIR=/usr/local/bin/graders
       - DOCKER_HOST=unix:///var/run/docker.sock
       

@@ -46,8 +46,8 @@ if [ ! -f "$REPO_DIR/main.go" ]; then
     echo "💡 Script location: $SCRIPT_DIR"
     exit 1
 fi
-if [ ! -f "$REPO_DIR/deploy/docker-compose.yml" ]; then
-    echo "❌ Error: docker-compose.yml not found: $REPO_DIR/deploy/docker-compose.yml"
+if [ ! -f "$REPO_DIR/deploy/docker-compose.yaml" ]; then
+    echo "❌ Error: docker-compose.yaml not found: $REPO_DIR/deploy/docker-compose.yaml"
     echo "💡 Make sure you're using a complete ByteGrader repository"
     exit 1
 fi
@@ -90,8 +90,8 @@ export BYTEGRADER_COMPLETED_JOB_TTL_HOURS
 export BYTEGRADER_FAILED_JOB_TTL_HOURS
 export BYTEGRADER_OLD_FILE_TTL_HOURS
 
-# Copy and process docker-compose.yml with environment variables
-envsubst < "$REPO_DIR/deploy/docker-compose.yml" > docker-compose.yml
+# Copy and process docker-compose.yaml with environment variables
+envsubst < "$REPO_DIR/deploy/docker-compose.yaml" > docker-compose.yaml
 
 # Copy Dockerfile
 cp "$REPO_DIR/deploy/Dockerfile" .

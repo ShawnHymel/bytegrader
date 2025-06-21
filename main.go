@@ -39,7 +39,6 @@ type Config struct {
     FailedJobTTL        time.Duration // hours
     OldFileTTL          time.Duration // hours
     QueueBufferSize     int
-    UploadsDir          string
     GraderRegistryPath  string        // Path to grader registry file
 
     // Security configuration
@@ -402,7 +401,6 @@ func loadConfig() *Config {
         FailedJobTTL:        time.Duration(getEnvInt("FAILED_JOB_TTL_HOURS", 24)) * time.Hour,
         OldFileTTL:          time.Duration(getEnvInt("OLD_FILE_TTL_HOURS", 48)) * time.Hour,
         QueueBufferSize:     getEnvInt("QUEUE_BUFFER_SIZE", 100),
-        UploadsDir:          getEnv("UPLOADS_DIR", "/tmp/uploads"),
         GraderRegistryPath: getEnv("GRADER_REGISTRY_PATH", "/usr/local/bin/graders/registry.yaml"),
         
         // Security configuration
@@ -520,30 +518,44 @@ func submitHandler(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    // Create job ID and file path
+    // Create job ID and workspace
     jobID := generateJobID()
-    
-    // Create uploads directory if it doesn't exist
-    os.MkdirAll(config.UploadsDir, 0755)
-    
-    // Construct the file path for saving
-    filePath := fmt.Sprintf("%s/%s_%s", config.UploadsDir, jobID, header.Filename)
-    
-    // Read and save file
+    jobWorkspace := fmt.Sprintf("/workspace/jobs/%s", jobID)
+
+    // Create job workspace directories (in shared volume)
+    err = os.MkdirAll(filepath.Join(jobWorkspace, "submission"), 0755)
+    if err != nil {
+        w.WriteHeader(http.StatusInternalServerError)
+        json.NewEncoder(w).Encode(ErrorResponse{Error: "Unable to create job workspace"})
+        return
+    }
+    err = os.MkdirAll(filepath.Join(jobWorkspace, "results"), 0755)
+    if err != nil {
+        w.WriteHeader(http.StatusInternalServerError)
+        json.NewEncoder(w).Encode(ErrorResponse{Error: "Unable to create results directory"})
+        return
+    }
+
+    // Save directly to job workspace
+    filePath := filepath.Join(jobWorkspace, "submission", "submission.zip")
+
+    // Read and save file directly to volume
     fileContents, err := io.ReadAll(file)
     if err != nil {
         w.WriteHeader(http.StatusInternalServerError)
         json.NewEncoder(w).Encode(ErrorResponse{Error: "Unable to read file"})
         return
     }
-    
-    // Write file to disk
+
+    // Write file directly to volume workspace
     err = os.WriteFile(filePath, fileContents, 0644)
     if err != nil {
         w.WriteHeader(http.StatusInternalServerError)
-        json.NewEncoder(w).Encode(ErrorResponse{Error: "Unable to save file"})
+        json.NewEncoder(w).Encode(ErrorResponse{Error: "Unable to save file to workspace"})
         return
     }
+
+    fmt.Printf("📁 File saved directly to workspace: %s\n", filePath)
 
 	// Get assignment ID from form data, query param, or header
 	assignmentID := getAssignmentID(r)
@@ -653,7 +665,6 @@ func configHandler(w http.ResponseWriter, r *http.Request) {
         "failed_job_ttl_hours":    int(config.FailedJobTTL.Hours()),
         "old_file_ttl_hours":      int(config.OldFileTTL.Hours()),
         "queue_buffer_size":       config.QueueBufferSize,
-        "uploads_dir":             config.UploadsDir,
         "grader_registry_path":    config.GraderRegistryPath,
         "require_api_key":         config.RequireAPIKey,
         "ip_whitelist_enabled":    len(config.AllowedIPs) > 0,
@@ -886,6 +897,7 @@ func (q *JobQueue) performCleanup() {
     now := time.Now()
     cleanedFiles := 0
     cleanedJobs := 0
+    cleanedWorkspaces := 0
     
     // Check all jobs for cleanup candidates
     for jobID, job := range q.jobs {
@@ -905,12 +917,29 @@ func (q *JobQueue) performCleanup() {
         }
         
         if shouldCleanup {
-            // Remove file if it exists
-            if job.FilePath != "" {
+            // Remove old upload file if it exists (from /tmp/uploads - if we still use that)
+            if job.FilePath != "" && !strings.Contains(job.FilePath, "/workspace/") {
                 err := os.Remove(job.FilePath)
                 if err == nil {
                     cleanedFiles++
-                    fmt.Printf("🗑️  Cleaned up old file: %s (Job: %s) - %s\n", job.FilePath, jobID, reason)
+                    fmt.Printf(
+                        "🗑️  Cleaned up old upload file: %s (Job: %s) - %s\n", 
+                        job.FilePath, 
+                        jobID, 
+                        reason
+                    )
+                }
+            }
+            
+            // Remove job workspace from volume
+            jobWorkspacePath := fmt.Sprintf("/workspace/jobs/%s", jobID)
+            if _, err := os.Stat(jobWorkspacePath); err == nil {
+                err := os.RemoveAll(jobWorkspacePath)
+                if err == nil {
+                    cleanedWorkspaces++
+                    fmt.Printf("🗑️  Cleaned up job workspace: %s - %s\n", jobWorkspacePath, reason)
+                } else {
+                    fmt.Printf("⚠️  Failed to cleanup workspace %s: %v\n", jobWorkspacePath, err)
                 }
             }
             
@@ -920,7 +949,44 @@ func (q *JobQueue) performCleanup() {
         }
     }
     
-    fmt.Printf("🧹 Cleanup complete: %d files removed, %d jobs removed\n", cleanedFiles, cleanedJobs)
+    // Clean up orphaned workspaces (workspaces without corresponding jobs in memory)
+    workspacePath := "/workspace/jobs"
+    if _, err := os.Stat(workspacePath); err == nil {
+        jobDirs, err := os.ReadDir(workspacePath)
+        if err == nil {
+            for _, dir := range jobDirs {
+                if dir.IsDir() {
+                    jobID := dir.Name()
+                    
+                    // If this workspace doesn't have a corresponding job in memory
+                    if _, exists := q.jobs[jobID]; !exists {
+                        jobWorkspacePath := filepath.Join(workspacePath, jobID)
+                        
+                        // Check if the workspace is old enough to clean up
+                        if info, err := os.Stat(jobWorkspacePath); err == nil {
+                            if info.ModTime().Before(now.Add(-config.OldFileTTL)) {
+                                err := os.RemoveAll(jobWorkspacePath)
+                                if err == nil {
+                                    cleanedWorkspaces++
+                                    fmt.Printf(
+                                        "🗑️  Cleaned up orphaned workspace: %s (no job record)\n", 
+                                        jobWorkspacePath
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    fmt.Printf(
+        "🧹 Cleanup complete: %d upload files removed, %d workspaces removed, %d jobs removed\n", 
+        cleanedFiles, 
+        cleanedWorkspaces, 
+        cleanedJobs
+    )
 }
 
 //------------------------------------------------------------------------------
@@ -955,13 +1021,6 @@ func (q *JobQueue) runContainerGrader(job *Job, tempDir string) *JobResult {
     }
     defer cli.Close()
     
-    // Prepare submission in shared volume (no prep container needed!)
-    err = q.prepareSubmissionInSharedVolume(jobWorkspace, job.FilePath)
-    if err != nil {
-        return &JobResult{Error: fmt.Sprintf("Failed to prepare submission: %v", err)}
-    }
-    defer q.cleanupJobWorkspace(jobWorkspace) // Clean up when done
-    
     // Ensure all mount paths exist and get absolute paths
     submissionFile := filepath.Join(jobWorkspace, "submission", "submission.zip")
     resultsDir := filepath.Join(jobWorkspace, "results")
@@ -990,7 +1049,7 @@ func (q *JobQueue) runContainerGrader(job *Job, tempDir string) *JobResult {
     fmt.Printf("   Workspace: %s -> /workspace\n", absJobWorkspace)
     fmt.Printf("   Results: %s -> /results\n", absResultsDir)
 
-    // Create grader container with assignment image and specific mounts
+    // Create grader container with assignment image, specific mounts, and resource limits
     resp, err := cli.ContainerCreate(
         ctx, 
         &container.Config{
@@ -1016,6 +1075,17 @@ func (q *JobQueue) runContainerGrader(job *Job, tempDir string) *JobResult {
                 },
             },
             AutoRemove: true,
+            Resources: container.Resources{
+                Memory:   int64(assignmentConfig.Resources.MemoryMB) * 1024 * 1024, // Convert MB to bytes
+                NanoCPUs: int64(assignmentConfig.Resources.CPULimit * 1e9),         // Convert CPU cores to nanocpus
+                PidsLimit: func() *int64 {
+                    if assignmentConfig.Resources.PidsLimit > 0 {
+                        limit := int64(assignmentConfig.Resources.PidsLimit)
+                        return &limit
+                    }
+                    return nil
+                }(),
+            },
         }, 
         nil, 
         nil, 
@@ -1082,35 +1152,6 @@ func (q *JobQueue) runContainerGrader(job *Job, tempDir string) *JobResult {
     }
 
     return result
-}
-
-// Prepare submission in shared volume (no containers needed)
-func (q *JobQueue) prepareSubmissionInSharedVolume(jobWorkspace string, submissionPath string) error {
-
-    fmt.Printf("📦 Preparing submission in shared volume at %s...\n", jobWorkspace)
-    
-    // Create job directories
-    err := os.MkdirAll(filepath.Join(jobWorkspace, "submission"), 0755)
-    if err != nil {
-        return fmt.Errorf("failed to create submission directory: %v", err)
-    }
-    
-    // Create results directory
-    err = os.MkdirAll(filepath.Join(jobWorkspace, "results"), 0755)
-    if err != nil {
-        return fmt.Errorf("failed to create results directory: %v", err)
-    }
-    
-    // Copy submission file directly
-    submissionFile := filepath.Join(jobWorkspace, "submission", "submission.zip")
-    err = q.copyFile(submissionPath, submissionFile)
-    if err != nil {
-        return fmt.Errorf("failed to copy submission file: %v", err)
-    }
-    
-    fmt.Printf("✅ Submission prepared in shared volume\n")
-
-    return nil
 }
 
 // Wait for container to complete with timeout and status updates (blocking)
@@ -1182,16 +1223,6 @@ func (q *JobQueue) readResultsFromSharedVolume(jobWorkspace string) *JobResult {
     
     fmt.Printf("✅ Container grading complete: Score %.1f\n", result.Score)
     return &result
-}
-
-// Cleanup job workspace directory
-func (q *JobQueue) cleanupJobWorkspace(jobWorkspace string) {
-    err := os.RemoveAll(jobWorkspace)
-    if err != nil {
-        fmt.Printf("⚠️  Failed to cleanup job workspace %s: %v\n", jobWorkspace, err)
-    } else {
-        fmt.Printf("🗑️  Job workspace %s cleanup completed\n", jobWorkspace)
-    }
 }
 
 //------------------------------------------------------------------------------
@@ -1294,11 +1325,9 @@ func main() {
     fmt.Printf("   Failed job TTL: %v\n", config.FailedJobTTL)
     fmt.Printf("   Old file TTL: %v\n", config.OldFileTTL)
     fmt.Printf("   Queue buffer size: %d\n", config.QueueBufferSize)
-    fmt.Printf("   Uploads directory: %s\n", config.UploadsDir)
     fmt.Printf("   Max concurrent jobs: %d\n", config.MaxConcurrentJobs)
     fmt.Printf("   Max Queue Size: %d\n", config.MaxQueueSize)
 	fmt.Printf("   Grading registry path: %s\n", config.GraderRegistryPath)
-    fmt.Printf("   Uploads Directory: %s (files will be stored here)\n", config.UploadsDir)
     fmt.Println("")
 
     // Test Docker availability using Docker SDK
@@ -1387,9 +1416,6 @@ func main() {
     go jobQueue.startWorker()
     go jobQueue.startCleanup()
     go rateLimitManager.cleanup() // Clean up old rate limiters
-
-    // Create uploads directory
-    os.MkdirAll(config.UploadsDir, 0755)
 
     // Create a custom mux to handle CORS globally
     mux := http.NewServeMux()
