@@ -1241,7 +1241,7 @@ func (q *JobQueue) readResultsFromSharedVolume(jobWorkspace string) *JobResult {
     fmt.Printf("📖 Reading results from shared volume at %s...\n", jobWorkspace)
     
     // Construct the results file path
-    resultsFile := filepath.Join(jobWorkspace, "output.json")
+    resultsFile := filepath.Join(jobWorkspace, "results", "output.json")
     
     // Check if results file exists
     if _, err := os.Stat(resultsFile); os.IsNotExist(err) {
