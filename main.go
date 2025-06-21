@@ -1041,6 +1041,7 @@ func (q *JobQueue) runContainerGrader(job *Job, tempDir string) *JobResult {
             Image: assignmentConfig.Image,
             WorkingDir: fmt.Sprintf("/workspace/jobs/%s", job.ID),
             Env: []string{"BYTEGRADER_VOLUME_MODE=true"},
+            User: fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid()),
         }, 
         &container.HostConfig{
             Mounts: []mount.Mount{
@@ -1050,7 +1051,7 @@ func (q *JobQueue) runContainerGrader(job *Job, tempDir string) *JobResult {
                     Target: "/workspace",
                 },
             },
-            AutoRemove: false, // ***TODO: Set to true in production to avoid leftover containers***
+            AutoRemove: false, // ***TODO IMPORTANT FIX THIS SERIOUSLY: Set to true in production to avoid leftover containers***
             Resources: container.Resources{
                 Memory:   int64(assignmentConfig.Resources.MemoryMB) * 1024 * 1024,
                 NanoCPUs: int64(assignmentConfig.Resources.CPULimit * 1e9),

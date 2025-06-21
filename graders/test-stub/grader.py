@@ -115,9 +115,6 @@ def main():
         submission_path = os.path.join(work_dir, "submission", "submission.zip")
         results_dir = os.path.join(work_dir, "results")
 
-        # Ensure results directory exists in the grader container
-        os.makedirs(results_dir, exist_ok=True)
-
         print(f"📋 Volume mode: using working directory {work_dir}", file=sys.stderr)
         print(f"📋 Volume mode paths:", file=sys.stderr)
         print(f"   Submission: {submission_path}", file=sys.stderr)
