@@ -926,7 +926,7 @@ func (q *JobQueue) performCleanup() {
                         "🗑️  Cleaned up old upload file: %s (Job: %s) - %s\n", 
                         job.FilePath, 
                         jobID, 
-                        reason
+                        reason,
                     )
                 }
             }
@@ -970,7 +970,7 @@ func (q *JobQueue) performCleanup() {
                                     cleanedWorkspaces++
                                     fmt.Printf(
                                         "🗑️  Cleaned up orphaned workspace: %s (no job record)\n", 
-                                        jobWorkspacePath
+                                        jobWorkspacePath,
                                     )
                                 }
                             }
@@ -985,7 +985,7 @@ func (q *JobQueue) performCleanup() {
         "🧹 Cleanup complete: %d upload files removed, %d workspaces removed, %d jobs removed\n", 
         cleanedFiles, 
         cleanedWorkspaces, 
-        cleanedJobs
+        cleanedJobs,
     )
 }
 
