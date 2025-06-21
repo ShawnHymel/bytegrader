@@ -35,12 +35,14 @@ RUN pip install --no-cache-dir python-magic
 ARG USER_ID=1000
 ARG GROUP_ID=988
 
-# Create user with existing docker group (GID 988)
-RUN useradd -u ${USER_ID} -g ${GROUP_ID} -m -s /bin/sh bytegrader
+# Create groups if they don't exist, then create user
+RUN groupadd -f -g 999 docker \
+    && groupadd -f -g ${GROUP_ID} bytegrader \
+    && useradd -u ${USER_ID} -g bytegrader -G docker -m -s /bin/sh bytegrader
 
 # Create directories with correct ownership
 RUN mkdir -p /app /tmp/uploads /usr/local/bin/graders /workspace/jobs \
-    && chown -R ${USER_ID}:${GROUP_ID} /app /tmp/uploads /workspace \
+    && chown -R bytegrader:bytegrader /app /tmp/uploads /workspace \
     && chmod -R 755 /workspace
 
 # Copy the Go binary from builder stage
