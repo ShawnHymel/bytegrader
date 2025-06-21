@@ -1092,19 +1092,6 @@ func (q *JobQueue) runContainerGrader(job *Job, tempDir string) *JobResult {
     if err != nil {
         return &JobResult{Error: fmt.Sprintf("Failed to inspect container: %v", err)}
     }
-    
-    // Always get container logs for debugging
-    logs, err := cli.ContainerLogs(ctx, containerID, container.LogsOptions{
-        ShowStdout: true,
-        ShowStderr: true,
-    })
-    if err == nil && logs != nil {
-        logData, _ := io.ReadAll(logs)
-        logs.Close()
-        fmt.Printf("📋 Container logs:\n%s\n", string(logData))
-    } else {
-        fmt.Printf("⚠️  Could not retrieve container logs: %v\n", err)
-    }
 
     // Always try to read results first, regardless of exit code
     result := q.readResultsFromSharedVolume(jobWorkspace)
