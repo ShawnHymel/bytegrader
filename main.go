@@ -962,6 +962,34 @@ func (q *JobQueue) runContainerGrader(job *Job, tempDir string) *JobResult {
     }
     defer q.cleanupJobWorkspace(jobWorkspace) // Clean up when done
     
+    // Ensure all mount paths exist and get absolute paths
+    submissionFile := filepath.Join(jobWorkspace, "submission", "submission.zip")
+    resultsDir := filepath.Join(jobWorkspace, "results")
+
+    // Convert to absolute paths
+    absJobWorkspace, err := filepath.Abs(jobWorkspace)
+    if err != nil {
+        return &JobResult{Error: fmt.Sprintf("Failed to get absolute path for workspace: %v", err)}
+    }
+    absSubmissionFile, err := filepath.Abs(submissionFile)
+    if err != nil {
+        return &JobResult{Error: fmt.Sprintf("Failed to get absolute path for submission: %v", err)}
+    }
+    absResultsDir, err := filepath.Abs(resultsDir)
+    if err != nil {
+        return &JobResult{Error: fmt.Sprintf("Failed to get absolute path for results: %v", err)}
+    }
+
+    // Verify the submission file exists before mounting
+    if _, err := os.Stat(absSubmissionFile); os.IsNotExist(err) {
+        return &JobResult{Error: fmt.Sprintf("Submission file does not exist: %s", absSubmissionFile)}
+    }
+
+    fmt.Printf("📁 Mount paths:\n")
+    fmt.Printf("   Submission: %s -> /submission/submission.zip\n", absSubmissionFile)
+    fmt.Printf("   Workspace: %s -> /workspace\n", absJobWorkspace)
+    fmt.Printf("   Results: %s -> /results\n", absResultsDir)
+
     // Create grader container with assignment image and specific mounts
     resp, err := cli.ContainerCreate(
         ctx, 
@@ -972,18 +1000,18 @@ func (q *JobQueue) runContainerGrader(job *Job, tempDir string) *JobResult {
             Mounts: []mount.Mount{
                 {
                     Type:   mount.TypeBind,
-                    Source: filepath.Join(jobWorkspace, "submission", "submission.zip"),
+                    Source: absSubmissionFile,
                     Target: "/submission/submission.zip",
                     ReadOnly: true,
                 },
                 {
                     Type:   mount.TypeBind,
-                    Source: jobWorkspace,
+                    Source: absJobWorkspace,
                     Target: "/workspace",
                 },
                 {
                     Type:   mount.TypeBind,
-                    Source: filepath.Join(jobWorkspace, "results"),
+                    Source: absResultsDir,
                     Target: "/results",
                 },
             },
@@ -1045,7 +1073,7 @@ func (q *JobQueue) runContainerGrader(job *Job, tempDir string) *JobResult {
                 logs.Close()
                 return &JobResult{Error: fmt.Sprintf("Grader exited with code %d: %s", exitCode, string(logData))}
             }
-            
+
             return &JobResult{Error: fmt.Sprintf("Grader exited with code %d", exitCode)}
         }
         
