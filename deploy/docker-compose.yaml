@@ -61,3 +61,7 @@ services:
         reservations:
           memory: 512M
           cpus: '0.5'
+
+volumes:
+  bytegrader-workspace:
+    # Let Docker manage this volume
