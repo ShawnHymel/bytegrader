@@ -962,20 +962,37 @@ func (q *JobQueue) runContainerGrader(job *Job, tempDir string) *JobResult {
     }
     defer q.cleanupJobWorkspace(jobWorkspace) // Clean up when done
     
-    // Create grader container
-    resp, err := cli.ContainerCreate(ctx, &container.Config{
-        Image: assignmentConfig.Image,
-        WorkingDir: fmt.Sprintf("/workspace/jobs/%s", job.ID),
-    }, &container.HostConfig{
-        Mounts: []mount.Mount{
-            {
-                Type:   mount.TypeVolume,
-                Source: "bytegrader-workspace",
-                Target: "/workspace",
+    // Create grader container with assignment image and specific mounts
+    resp, err := cli.ContainerCreate(
+        ctx, 
+        &container.Config{
+            Image: assignmentConfig.Image,
+        }, 
+        &container.HostConfig{
+            Mounts: []mount.Mount{
+                {
+                    Type:   mount.TypeBind,
+                    Source: filepath.Join(jobWorkspace, "submission", "submission.zip"),
+                    Target: "/submission/submission.zip",
+                    ReadOnly: true,
+                },
+                {
+                    Type:   mount.TypeBind,
+                    Source: jobWorkspace,
+                    Target: "/workspace",
+                },
+                {
+                    Type:   mount.TypeBind,
+                    Source: filepath.Join(jobWorkspace, "results"),
+                    Target: "/results",
+                },
             },
-        },
-        AutoRemove: true,
-    }, nil, nil, "")
+            AutoRemove: true,
+        }, 
+        nil, 
+        nil, 
+        ""
+    )
     
     // Check for errors in container creation
     if err != nil {
@@ -1017,6 +1034,7 @@ func (q *JobQueue) runContainerGrader(job *Job, tempDir string) *JobResult {
         
         // If we got valid results from output.json, use those (even on non-zero exit)
         if result.Error == "" || result.Error == "No output.json found in results directory" {
+
             // No valid results file, fall back to container logs
             logs, _ := cli.ContainerLogs(ctx, containerID, container.LogsOptions{
                 ShowStdout: true,
