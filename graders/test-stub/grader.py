@@ -24,6 +24,9 @@ ALLOWED_FILE_TYPES = [
 # Max unzip size in bytes
 MAX_UNZIP_SIZE = 10 * 1024 * 1024  # 10 MB
 
+# Name of the output file
+OUTPUT_FILE = 'output.json'
+
 def validate_file_type(file_path, allowed_types=None):
     """Check if the file exists and is of an allowed type"""
 
@@ -40,6 +43,7 @@ def validate_file_type(file_path, allowed_types=None):
 
 def safe_extract(zip_path, extract_to, max_size, allowed_file_types=None):
     """Safely extract a zip file, checking for zip bombs and path traversal"""
+
     total_size = 0
 
     # Validate the file type
@@ -76,11 +80,11 @@ def safe_extract(zip_path, extract_to, max_size, allowed_file_types=None):
         # If all checks pass, extract the files
         zip_ref.extractall(extract_to)
 
-def write_results_and_exit(result, exit_code=0):
+def write_results_and_exit(results_dir, result, exit_code=0):
     """Write results to output.json and exit with specified code"""
     try:
         # Write results to working directory for Go app to read
-        with open('output.json', 'w') as f:
+        with open(os.path.join(results_dir, OUTPUT_FILE), 'w') as f:
             json.dump(result, f, indent=2)
         print(f"✅ Results written to output.json", file=sys.stderr)
     except Exception as e:
@@ -93,27 +97,53 @@ def write_results_and_exit(result, exit_code=0):
 def main():
     """
     Main function for the autograder script.
-    It extracts the submission, performs dummy grading, and returns a JSON result.
+    It extracts the submission, performs dummy grading, and returns a JSON result in output.json.
 
     This script is designed to be run in a Docker container with mounted volumes, but can also be 
     run locally for testing. It expects two command line arguments: the path to the submission zip 
     file and the working directory. The results are written to a mounted output directory or printed
     to stdout.
 
-    Usage: python3 grader.py <submission_path> <work_dir>
+    Usage: python3 grader.py <submission_path> <work_dir> <results_dir>
     """
     
-    # Expect exactly 2 arguments: submission_path and work_dir
-    if len(sys.argv) != 3:
-        result = {
-            "error": f"Usage: python3 grader.py <submission_path> <work_dir>\n" +
-                    f"Got {len(sys.argv)-1} arguments, expected 2"
-        }
-        write_results_and_exit(result, 1)
+    # Expect exactly 3 arguments: submission_path, work_dir, results_dir
+    if len(sys.argv) != 4:
+        print(
+            "Usage: python3 grader.py <submission_path> <work_dir> <results_dir>", 
+            file=sys.stderr
+        )
+        sys.exit(1)
 
     # Extract original filename from submission path
     submission_path = sys.argv[1]
     work_dir = sys.argv[2]
+    results_dir = sys.argv[3]
+
+    # TEST: Print contents of submission_path
+    print(f"📂 Submission path: {submission_path}", file=sys.stderr)
+    for root, dirs, files in os.walk(submission_path):
+        print(f"📂 Directory: {root}", file=sys.stderr)
+        for file in files:
+            print(f"📄 File: {file}", file=sys.stderr)
+
+    # Validate the submission, work directory, and results directory
+    if not os.path.isfile(submission_path):
+        result = {
+            "error": f"Submission file does not exist: {submission_path}"
+        }
+        write_results_and_exit(results_dir, result, 1)
+    if not os.path.isdir(work_dir):
+        result = {
+            "error": f"Working directory does not exist: {work_dir}"
+        }
+        write_results_and_exit(results_dir, result, 1)
+    if not os.path.isdir(results_dir):
+        result = {
+            "error": f"Results directory does not exist: {results_dir}"
+        }
+        write_results_and_exit(results_dir, result, 1)
+
     original_filename = os.path.basename(submission_path)
 
     print(f"Processing {original_filename} -> {work_dir}", file=sys.stderr)
@@ -137,7 +167,7 @@ def main():
     except Exception as e:
         result["error"] = f"Extraction failed: {str(e)}"
         print(f"❌ Extraction error: {e}", file=sys.stderr)
-        write_results_and_exit(result, 1)
+        write_results_and_exit(results_dir, result, 1)
 
     # Simulate some grading time
     print(f"🔬 Grading {original_filename}...", file=sys.stderr)
@@ -151,7 +181,7 @@ def main():
     print(f"✅ Grading complete. Score: {result['score']}/{result['max_score']}", file=sys.stderr)
     
     # Write results to output.json and exit
-    write_results_and_exit(result, 0)
+    write_results_and_exit(results_dir, result, 0)
 
 if __name__ == "__main__":
     main()

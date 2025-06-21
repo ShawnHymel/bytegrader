@@ -39,6 +39,7 @@ Here is how you build and run the *test-stub* grader locally (with an example su
 cd graders/test-stub/
 docker build -t bytegrader-test-stub .
 cd ../..
+mkdir -p test/results/
 docker run --rm -v "$(pwd)/test/submission-make-c-hello.zip:/submission/submission.zip:ro" -v "$(pwd)/test/results/:/results" bytegrader-test-stub
 ```
 
