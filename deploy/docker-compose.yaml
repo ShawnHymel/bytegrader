@@ -61,11 +61,3 @@ services:
         reservations:
           memory: 512M
           cpus: '0.5'
-
-volumes:
-  bytegrader-workspace:
-    driver: local
-    driver_opts:
-      type: none
-      device: ./workspace
-      o: bind
