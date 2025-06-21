@@ -109,16 +109,20 @@ def main():
     
     # volume mode (running on server): use environment variables to determine paths
     if os.getenv("BYTEGRADER_VOLUME_MODE") == "true":
-        
+
         # Server/volume mode: ignore ENTRYPOINT arguments, use working directory
         work_dir = os.getcwd()  # e.g., /workspace/jobs/{jobID}
         submission_path = os.path.join(work_dir, "submission", "submission.zip")
         results_dir = os.path.join(work_dir, "results")
 
+        # Ensure results directory exists in the grader container
+        os.makedirs(results_dir, exist_ok=True)
+
         print(f"📋 Volume mode: using working directory {work_dir}", file=sys.stderr)
         print(f"📋 Volume mode paths:", file=sys.stderr)
         print(f"   Submission: {submission_path}", file=sys.stderr)
         print(f"   Results: {results_dir}", file=sys.stderr)
+        print(f"✅ Results directory ensured: {results_dir}", file=sys.stderr)
 
     # Local testing mode: validate arguments and use provided paths
     else:
@@ -137,6 +141,25 @@ def main():
         print(f"   Submission: {submission_path}", file=sys.stderr)
         print(f"   Work dir: {work_dir}", file=sys.stderr)
         print(f"   Results: {results_dir}", file=sys.stderr)
+
+    # Debug: List what's actually in the working directory
+    if os.getenv("BYTEGRADER_VOLUME_MODE") == "true":
+        print(f"📂 Contents of {work_dir}:", file=sys.stderr)
+        try:
+            for item in os.listdir(work_dir):
+                item_path = os.path.join(work_dir, item)
+                if os.path.isdir(item_path):
+                    print(f"   📁 {item}/", file=sys.stderr)
+                    # List contents of subdirectories
+                    try:
+                        for subitem in os.listdir(item_path):
+                            print(f"      📄 {subitem}", file=sys.stderr)
+                    except:
+                        pass
+                else:
+                    print(f"   📄 {item}", file=sys.stderr)
+        except Exception as e:
+            print(f"   ❌ Error listing directory: {e}", file=sys.stderr)
 
     # Validate the submission, work directory, and results directory
     if not os.path.isfile(submission_path):
