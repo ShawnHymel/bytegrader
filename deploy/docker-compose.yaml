@@ -12,7 +12,7 @@ services:
       - ./graders/registry.yaml:/usr/local/bin/graders/registry.yaml:ro
       - bytegrader-workspace:/workspace
 
-    user: "${DOCKER_USER_ID}:${DOCKER_GROUP_ID}"
+    # user: "${DOCKER_USER_ID}:${DOCKER_GROUP_ID}"
     
     environment:
       # Course-specific settings
