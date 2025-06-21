@@ -64,4 +64,6 @@ services:
 
 volumes:
   bytegrader-workspace:
-    # Let Docker manage this volume
+    driver: local
+    driver_opts:
+      o: "uid=1000,gid=988"
