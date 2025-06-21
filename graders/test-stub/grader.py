@@ -78,44 +78,32 @@ def safe_extract(zip_path, extract_to, max_size, allowed_file_types=None):
 
 def main():
     """
-    Main function to handle grading logic.
-    This function checks the number of arguments to determine the mode of operation:
-    - Volume mode: No arguments, uses a default submission path.
-    - Standalone mode: Requires 3 arguments for submission path, original filename, and work directory.
-    
+    Main function for the autograder script.
     It extracts the submission, performs dummy grading, and returns a JSON result.
+
+    This script is designed to be run in a Docker container with mounted volumes, but can also be 
+    run locally for testing. It expects two command line arguments: the path to the submission zip 
+    file and the working directory. The results are written to a mounted output directory or printed
+    to stdout.
+
+    Usage: python3 grader.py <submission_path> <work_dir>
     """
     
-    # Volume mode - no arguments needed
-    if len(sys.argv) == 1:
-        submission_path = '/workspace/submission/submission.zip'
-        original_filename = 'submission.zip'
-        work_dir = '/workspace/extracted'
-        results_dir = '/workspace/results'
-        print("🐳 Running in VOLUME mode", file=sys.stderr)
-        
-    # Standalone mode - 3 arguments required
-    elif len(sys.argv) == 4:
-        # Standalone mode - 3 arguments required
-        submission_path = sys.argv[1]
-        original_filename = sys.argv[2] 
-        work_dir = sys.argv[3]
-        results_dir = None  # Write to current directory in standalone mode
-        print("🖥️  Running in STANDALONE mode", file=sys.stderr)
-    
-    # Unsupported mode - invalid arguments
-    else:
+    # Expect exactly 2 arguments: submission_path and work_dir
+    if len(sys.argv) != 3:
         result = {
-            "error": "Invalid arguments. Use either:\n" +
-                    "  Volume mode: python3 grader.py (no arguments)\n" +
-                    "  Standalone mode: python3 grader.py <submission_path> <original_filename> <work_dir>"
+            "error": f"Usage: python3 grader.py <submission_path> <work_dir>\n" +
+                    f"Got {len(sys.argv)-1} arguments, expected 2"
         }
         print(json.dumps(result), file=sys.stderr)
         sys.exit(1)
-    
-    # Ensure results directory exists (volume mode)
-    if results_dir:
-        os.makedirs(results_dir, exist_ok=True)
+
+    # Extract original filename from submission path
+    submission_path = sys.argv[1]
+    work_dir = sys.argv[2]
+    original_filename = os.path.basename(submission_path)
+
+    print(f"Processing {original_filename} -> {work_dir}", file=sys.stderr)
     
     # Initialize grading result
     result = {
@@ -150,16 +138,12 @@ def main():
     # Log the result
     print(f"✅ Grading complete. Score: {result['score']}/{result['max_score']}", file=sys.stderr)
     
-    # Write results to mounted output directory (for container integration)
-    try:
-        with open('/results/output.json', 'w') as f:
-            json.dump(result, f, indent=2)
-    except:
-        # If /results doesn't exist, we're probably running locally
-        pass
-    
     # Output JSON result to stdout (for direct testing and Go app parsing)
     print(json.dumps(result, indent=2))
+
+    # Write results to working directory for Go app to read
+    with open('output.json', 'w') as f:
+        json.dump(result, f, indent=2)
 
 if __name__ == "__main__":
     main()
