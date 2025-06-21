@@ -135,14 +135,23 @@ else
 fi
 
 echo "🐳 Building and starting ByteGrader..."
+
 # Stop any existing containers
 docker compose down 2>/dev/null || true
 
-# Build with no cache and user IDs
+# Build with no cache to ensure latest code
 docker compose build --no-cache \
   --build-arg USER_ID="$DOCKER_USER_ID" \
   --build-arg GROUP_ID="$DOCKER_GROUP_ID" \
   --build-arg DOCKER_GID="$DOCKER_GROUP_ID"
+
+# Fix volume ownership to match container user
+echo "🔧 Fixing volume permissions..."
+docker run --rm -v bytegrader-workspace:/workspace alpine sh -c "
+  chown -R $DOCKER_USER_ID:$DOCKER_GROUP_ID /workspace &&
+  chmod -R 755 /workspace &&
+  echo 'Volume ownership fixed to $DOCKER_USER_ID:$DOCKER_GROUP_ID'
+"
 
 # Start the services
 docker compose up -d
