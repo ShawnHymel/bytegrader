@@ -107,25 +107,36 @@ def main():
     Usage: python3 grader.py <submission_path> <work_dir> <results_dir>
     """
     
-    # Expect exactly 3 arguments: submission_path, work_dir, results_dir
-    if len(sys.argv) != 4:
-        print(
-            "Usage: python3 grader.py <submission_path> <work_dir> <results_dir>", 
-            file=sys.stderr
-        )
-        sys.exit(1)
+    # volume mode (running on server): use environment variables to determine paths
+    if os.getenv("BYTEGRADER_VOLUME_MODE") == "true":
+        
+        # Server/volume mode: ignore ENTRYPOINT arguments, use working directory
+        work_dir = os.getcwd()  # e.g., /workspace/jobs/{jobID}
+        submission_path = os.path.join(work_dir, "submission", "submission.zip")
+        results_dir = os.path.join(work_dir, "results")
 
-    # Extract original filename from submission path
-    submission_path = sys.argv[1]
-    work_dir = sys.argv[2]
-    results_dir = sys.argv[3]
+        print(f"📋 Volume mode: using working directory {work_dir}", file=sys.stderr)
+        print(f"📋 Volume mode paths:", file=sys.stderr)
+        print(f"   Submission: {submission_path}", file=sys.stderr)
+        print(f"   Results: {results_dir}", file=sys.stderr)
 
-    # TEST: Print contents of submission_path
-    print(f"📂 Submission path: {submission_path}", file=sys.stderr)
-    for root, dirs, files in os.walk(submission_path):
-        print(f"📂 Directory: {root}", file=sys.stderr)
-        for file in files:
-            print(f"📄 File: {file}", file=sys.stderr)
+    # Local testing mode: validate arguments and use provided paths
+    else:
+        
+        # Check if the correct number of arguments is provided
+        if len(sys.argv) != 4:
+            print("Usage: python3 grader.py <submission_path> <work_dir> <results_dir>", file=sys.stderr)
+            sys.exit(1)
+        
+        # Parse command line arguments
+        submission_path = sys.argv[1]
+        work_dir = sys.argv[2]
+        results_dir = sys.argv[3]
+
+        print(f"📋 Local mode: using provided paths", file=sys.stderr)
+        print(f"   Submission: {submission_path}", file=sys.stderr)
+        print(f"   Work dir: {work_dir}", file=sys.stderr)
+        print(f"   Results: {results_dir}", file=sys.stderr)
 
     # Validate the submission, work directory, and results directory
     if not os.path.isfile(submission_path):

@@ -1021,63 +1021,26 @@ func (q *JobQueue) runContainerGrader(job *Job, tempDir string) *JobResult {
     }
     defer cli.Close()
     
-    // Ensure all mount paths exist and get absolute paths
-    submissionFile := filepath.Join(jobWorkspace, "submission", "submission.zip")
-    resultsDir := filepath.Join(jobWorkspace, "results")
-
-    // Convert to absolute paths
-    absJobWorkspace, err := filepath.Abs(jobWorkspace)
-    if err != nil {
-        return &JobResult{Error: fmt.Sprintf("Failed to get absolute path for workspace: %v", err)}
-    }
-    absSubmissionFile, err := filepath.Abs(submissionFile)
-    if err != nil {
-        return &JobResult{Error: fmt.Sprintf("Failed to get absolute path for submission: %v", err)}
-    }
-    absResultsDir, err := filepath.Abs(resultsDir)
-    if err != nil {
-        return &JobResult{Error: fmt.Sprintf("Failed to get absolute path for results: %v", err)}
-    }
-
-    // Verify the submission file exists before mounting
-    if _, err := os.Stat(absSubmissionFile); os.IsNotExist(err) {
-        return &JobResult{Error: fmt.Sprintf("Submission file does not exist: %s", absSubmissionFile)}
-    }
-
-    fmt.Printf("📁 Mount paths:\n")
-    fmt.Printf("   Submission: %s -> /submission/submission.zip\n", absSubmissionFile)
-    fmt.Printf("   Workspace: %s -> /workspace\n", absJobWorkspace)
-    fmt.Printf("   Results: %s -> /results\n", absResultsDir)
-
-    // Create grader container with assignment image, specific mounts, and resource limits
+    // Create grader container with volume mount and environment detection
     resp, err := cli.ContainerCreate(
         ctx, 
         &container.Config{
             Image: assignmentConfig.Image,
+            WorkingDir: fmt.Sprintf("/workspace/jobs/%s", job.ID),
+            Env: []string{"BYTEGRADER_VOLUME_MODE=true"},
         }, 
         &container.HostConfig{
             Mounts: []mount.Mount{
                 {
-                    Type:   mount.TypeBind,
-                    Source: absSubmissionFile,
-                    Target: "/submission/submission.zip",
-                    ReadOnly: true,
-                },
-                {
-                    Type:   mount.TypeBind,
-                    Source: absJobWorkspace,
+                    Type:   mount.TypeVolume,
+                    Source: "bytegrader-workspace",
                     Target: "/workspace",
-                },
-                {
-                    Type:   mount.TypeBind,
-                    Source: absResultsDir,
-                    Target: "/results",
                 },
             },
             AutoRemove: true,
             Resources: container.Resources{
-                Memory:   int64(assignmentConfig.Resources.MemoryMB) * 1024 * 1024, // Convert MB to bytes
-                NanoCPUs: int64(assignmentConfig.Resources.CPULimit * 1e9),         // Convert CPU cores to nanocpus
+                Memory:   int64(assignmentConfig.Resources.MemoryMB) * 1024 * 1024,
+                NanoCPUs: int64(assignmentConfig.Resources.CPULimit * 1e9),
                 PidsLimit: func() *int64 {
                     if assignmentConfig.Resources.PidsLimit > 0 {
                         limit := int64(assignmentConfig.Resources.PidsLimit)
