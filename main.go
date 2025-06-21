@@ -484,6 +484,7 @@ func parseAPIKeys(keys string) []string {
 
 // Accept file uploads and queues them for processing
 func submitHandler(w http.ResponseWriter, r *http.Request) {
+    fmt.Printf("📥 Submit handler started\n")
     w.Header().Set("Content-Type", "application/json")
 
     if r.Method != "POST" {
@@ -493,6 +494,7 @@ func submitHandler(w http.ResponseWriter, r *http.Request) {
     }
 
     // Parse the multipart form with configured max file size
+    fmt.Printf("📝 Parsing multipart form (max size: %d bytes)\n", config.MaxFileSize)
     err := r.ParseMultipartForm(config.MaxFileSize)
     if err != nil {
         w.WriteHeader(http.StatusBadRequest)
@@ -501,6 +503,7 @@ func submitHandler(w http.ResponseWriter, r *http.Request) {
     }
 
     // Get the file from form data
+    fmt.Printf("📁 Getting file from form\n")
     file, header, err := r.FormFile("file")
     if err != nil {
         w.WriteHeader(http.StatusBadRequest)
@@ -508,6 +511,7 @@ func submitHandler(w http.ResponseWriter, r *http.Request) {
         return
     }
     defer file.Close()
+    fmt.Printf("✅ Got file: %s (size: %d bytes)\n", header.Filename, header.Size)
 
     // Check file size against configured limit
     if header.Size > config.MaxFileSize {
@@ -517,10 +521,12 @@ func submitHandler(w http.ResponseWriter, r *http.Request) {
         })
         return
     }
+    fmt.Printf("✅ File size OK\n")
 
     // Create job ID and workspace
     jobID := generateJobID()
     jobWorkspace := fmt.Sprintf("/workspace/jobs/%s", jobID)
+    fmt.Printf("📋 Creating job %s with workspace %s\n", jobID, jobWorkspace)
 
     // Create job workspace directories (in shared volume)
     err = os.MkdirAll(filepath.Join(jobWorkspace, "submission"), 0755)
