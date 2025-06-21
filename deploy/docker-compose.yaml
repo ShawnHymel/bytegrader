@@ -73,4 +73,5 @@ services:
 
 volumes:
   bytegrader-workspace:
-    # Let Docker manage this volume
+    external: true
+    name: bytegrader-workspace
