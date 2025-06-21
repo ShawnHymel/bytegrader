@@ -31,11 +31,20 @@ RUN apt-get update && apt-get install -y \
 # Install Python dependencies for graders
 RUN pip install --no-cache-dir python-magic
 
-# Create docker group if it doesn't exist, create app user, and add to docker group
-RUN groupadd -f docker \
-    && groupadd -r bytegrader \
-    && useradd -r -g bytegrader bytegrader \
-    && usermod -aG docker bytegrader
+# Create docker group and app user with host-matching IDs
+ARG USER_ID=1000
+ARG GROUP_ID=988
+ARG DOCKER_GID=988
+
+# Create groups and user with specific IDs
+RUN groupadd -g ${DOCKER_GID} docker \
+    && groupadd -g ${GROUP_ID} bytegrader \
+    && useradd -u ${USER_ID} -g ${GROUP_ID} -G docker -m -s /bin/sh bytegrader
+
+# Create directories with correct ownership
+RUN mkdir -p /app /tmp/uploads /usr/local/bin/graders /workspace/jobs \
+    && chown -R ${USER_ID}:${GROUP_ID} /app /tmp/uploads /workspace \
+    && chmod -R 755 /workspace
 
 # Create directories and set permissions
 RUN mkdir -p /app /tmp/uploads /usr/local/bin/graders /workspace/jobs \

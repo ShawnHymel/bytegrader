@@ -89,6 +89,11 @@ export BYTEGRADER_CLEANUP_INTERVAL_HOURS
 export BYTEGRADER_COMPLETED_JOB_TTL_HOURS
 export BYTEGRADER_FAILED_JOB_TTL_HOURS
 export BYTEGRADER_OLD_FILE_TTL_HOURS
+export DOCKER_USER_ID
+export DOCKER_GROUP_ID
+
+# Build with correct user/group IDs
+echo "🔧 Building with User ID: $DOCKER_USER_ID, Docker Group ID: $DOCKER_GROUP_ID"
 
 # Copy and process docker-compose.yaml with environment variables
 envsubst < "$REPO_DIR/deploy/docker-compose.yaml" > docker-compose.yaml
@@ -128,8 +133,11 @@ echo "🐳 Building and starting ByteGrader..."
 # Stop any existing containers
 docker compose down 2>/dev/null || true
 
-# Build with no cache to ensure latest code
-docker compose build --no-cache
+# Build with no cache and user IDs
+docker compose build --no-cache \
+  --build-arg USER_ID="$DOCKER_USER_ID" \
+  --build-arg GROUP_ID="$DOCKER_GROUP_ID" \
+  --build-arg DOCKER_GID="$DOCKER_GROUP_ID"
 
 # Start the services
 docker compose up -d
