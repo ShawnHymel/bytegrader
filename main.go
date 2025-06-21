@@ -523,24 +523,49 @@ func submitHandler(w http.ResponseWriter, r *http.Request) {
     }
     fmt.Printf("✅ File size OK\n")
 
+    // ***DEBUG: Check if /workspace exists first
+    fmt.Printf("🔍 Checking if /workspace exists\n")
+    if _, err := os.Stat("/workspace"); os.IsNotExist(err) {
+        fmt.Printf("❌ /workspace directory does not exist!\n")
+        w.WriteHeader(http.StatusInternalServerError)
+        json.NewEncoder(w).Encode(ErrorResponse{Error: "/workspace directory not mounted"})
+        return
+    } else if err != nil {
+        fmt.Printf("❌ Error checking /workspace: %v\n", err)
+        w.WriteHeader(http.StatusInternalServerError)
+        json.NewEncoder(w).Encode(ErrorResponse{Error: fmt.Sprintf("Error accessing workspace: %v", err)})
+        return
+    }
+    fmt.Printf("✅ /workspace exists\n")
+
     // Create job ID and workspace
     jobID := generateJobID()
     jobWorkspace := fmt.Sprintf("/workspace/jobs/%s", jobID)
     fmt.Printf("📋 Creating job %s with workspace %s\n", jobID, jobWorkspace)
 
-    // Create job workspace directories (in shared volume)
-    err = os.MkdirAll(filepath.Join(jobWorkspace, "submission"), 0755)
+    // Create job workspace directories
+    submissionDir := filepath.Join(jobWorkspace, "submission")
+    resultsDir := filepath.Join(jobWorkspace, "results")
+
+    fmt.Printf("📁 Creating submission directory: %s\n", submissionDir)
+    err = os.MkdirAll(submissionDir, 0755)
     if err != nil {
+        fmt.Printf("❌ Failed to create submission directory: %v\n", err)
         w.WriteHeader(http.StatusInternalServerError)
-        json.NewEncoder(w).Encode(ErrorResponse{Error: "Unable to create job workspace"})
+        json.NewEncoder(w).Encode(ErrorResponse{Error: fmt.Sprintf("Unable to create job workspace: %v", err)})
         return
     }
-    err = os.MkdirAll(filepath.Join(jobWorkspace, "results"), 0755)
+    fmt.Printf("✅ Created submission directory\n")
+
+    fmt.Printf("📁 Creating results directory: %s\n", resultsDir)
+    err = os.MkdirAll(resultsDir, 0755)
     if err != nil {
+        fmt.Printf("❌ Failed to create results directory: %v\n", err)
         w.WriteHeader(http.StatusInternalServerError)
-        json.NewEncoder(w).Encode(ErrorResponse{Error: "Unable to create results directory"})
+        json.NewEncoder(w).Encode(ErrorResponse{Error: fmt.Sprintf("Unable to create results directory: %v", err)})
         return
     }
+    fmt.Printf("✅ Created results directory\n")
 
     // Save directly to job workspace
     filePath := filepath.Join(jobWorkspace, "submission", "submission.zip")
