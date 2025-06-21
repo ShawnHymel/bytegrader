@@ -991,7 +991,7 @@ func (q *JobQueue) runContainerGrader(job *Job, tempDir string) *JobResult {
         }, 
         nil, 
         nil, 
-        ""
+        "",
     )
     
     // Check for errors in container creation
@@ -1033,7 +1033,7 @@ func (q *JobQueue) runContainerGrader(job *Job, tempDir string) *JobResult {
         fmt.Printf("⚠️  Container %s exited with code %d\n", containerID[:12], exitCode)
         
         // If we got valid results from output.json, use those (even on non-zero exit)
-        if result.Error == "" || result.Error == "No output.json found in results directory" {
+        if result.Error != "" && result.Error == "No output.json found in results directory" {
 
             // No valid results file, fall back to container logs
             logs, _ := cli.ContainerLogs(ctx, containerID, container.LogsOptions{
@@ -1045,6 +1045,7 @@ func (q *JobQueue) runContainerGrader(job *Job, tempDir string) *JobResult {
                 logs.Close()
                 return &JobResult{Error: fmt.Sprintf("Grader exited with code %d: %s", exitCode, string(logData))}
             }
+            
             return &JobResult{Error: fmt.Sprintf("Grader exited with code %d", exitCode)}
         }
         
