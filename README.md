@@ -286,14 +286,11 @@ Note that if you need to get the "local" IP address (what the App container sees
 
 ## Todo
 
- * Create Arduino example
+ * Create grader template/helper functions
+ * Create simple make/C grader example
+ * Add full integration test with make/C grader example
  * Make multi-stage Docker build for adding in environments (e.g. Arduino, ESP-IDF)
  * Build API for hosting site and LearnDash
- * Build loading scripts for hosting
- * Add pattern checking (i.e. did student call a particular function)
- * Add schema type checking for YAML config files
- * Set up GitHub actions for continuous testing (start with basic integration tests)
- * Construct unit tests
 
 ## License
 
