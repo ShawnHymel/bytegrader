@@ -139,7 +139,7 @@ func (q *JobQueue) waitForContainerCompletion(
     ctx context.Context, 
     cli *client.Client, 
     containerID string, 
-    timeout time.Duration
+    timeout time.Duration,
 ) (int64, error) {
     
     fmt.Printf("⏳ Waiting for container %s to complete (timeout: %v)...\n", containerID[:12], timeout)
