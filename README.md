@@ -29,6 +29,10 @@ While ByteGrader is optimized for embedded systems and hardware-centric courses,
 
 _Coming soon…_
 
+## API Endpoints
+
+See [the API endpoints page](/doc/api-endpoints.md) for a full list of endpoints and supported HTTP methods.
+
 ## Developing a Grader
 
 A *grader* is a combination of Docker image and Python grading script. Every time a student submits a file (usually a *.zip* file) to a particular assignment, the *API app* spins up a container from an image built for that assignment. Start with the *graders/test-stub* grader as a boilerplate template.
@@ -85,9 +89,12 @@ cd /home/bytegrader/app
 docker compose logs -f
 ```
 
-## API Endpoints
+## Security Best Practices
 
-See [the API endpoints page](/doc/api-endpoints.md) for a full list of endpoints and supported HTTP methods.
+- Never commit API keys, passwords, or certificates
+- Use environment variables for sensitive configuration
+- Keep dependencies updated
+- Enable branch protection on main
 
 ## Notes
 
