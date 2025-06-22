@@ -141,7 +141,7 @@ else
     echo "⚠️  No graders directory found"
 fi
 
-echo "🐳 Building "Docker image..."
+echo "🐳 Building Docker image..."
 
 # Stop any existing containers
 docker compose down 2>/dev/null || true
@@ -155,6 +155,7 @@ docker compose build --no-cache \
 
 # Fix volume ownership to match container user
 echo "🔧 Fixing volume permissions..."
+docker volume create bytegrader-workspace 2>/dev/null || true
 docker run --rm -v bytegrader-workspace:/workspace alpine sh -c "
   chown -R $DOCKER_USER_ID:$DOCKER_GROUP_ID /workspace &&
   chmod -R 755 /workspace &&
