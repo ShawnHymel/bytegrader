@@ -113,8 +113,7 @@ curl -H "X-API-Key: <API_KEY>" https://<SUBDOMAIN>.<DOMAIN>/queue
 To update Go dependencies (i.e. if you import a new package in *main.go* or want to update package listings in *go.mod* and *go.sum*), run the following:
 
 ```sh
-cd server/
-docker run --rm -v "$PWD":/app -w /app golang:1.24 go mod tidy
+docker run --rm -v "$PWD/server":/app -w /app golang:1.24 go mod tidy
 ```
 
 ### Check Go Server Syntax
@@ -122,8 +121,7 @@ docker run --rm -v "$PWD":/app -w /app golang:1.24 go mod tidy
 If you want to do a quick build of the Go server and throw away the build artifacts to check for basic syntax and build-time errros, just run a quick Go container:
 
 ```sh
-cd server/
-docker run --rm -v "$PWD":/app -w /app golang:1.24 go build -o /dev/null .
+docker run --rm -v "$PWD/server":/app -w /app golang:1.24 go build -o /dev/null .
 ```
 
 ### Update IP Whitelist
