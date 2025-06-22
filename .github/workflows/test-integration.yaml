@@ -1,0 +1,38 @@
+name: Test & Build
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.24'
+        
+    - name: Test Go syntax
+      run: |
+        cd server
+        go mod tidy
+        go build -o /dev/null .
+        
+    - name: Validate grader registry
+      run: |
+        python3 -c "
+        import yaml
+        with open('graders/registry.yaml') as f:
+            yaml.safe_load(f)
+        print('✅ Registry YAML is valid')
+        "
+        
+    - name: Test grader builds
+      run: |
+        cd graders/test-stub
+        docker build -t test-build .

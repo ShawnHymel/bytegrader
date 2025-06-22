@@ -100,3 +100,33 @@ graders/*/output/
 *.bin
 firmware/
 toolchain/
+
+# Add to your existing .gitignore
+.env
+.env.local
+.env.*.local
+*.key
+*.pem
+*.p12
+secrets/
+*.secret
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+temp/
+scratch/
+
+# Build artifacts
+dist/
+build/
+*.exe
