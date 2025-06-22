@@ -40,8 +40,8 @@ else
 fi
 
 # Validate repository directory
-if [ ! -f "$REPO_DIR/main.go" ]; then
-    echo "❌ Error: main.go not found in auto-detected repository: $REPO_DIR/main.go"
+if [ ! -f "$REPO_DIR/server/main.go" ]; then
+    echo "❌ Error: main.go not found in auto-detected repository: $REPO_DIR/server/main.go"
     echo "💡 Make sure you're running this script from the ByteGrader repository"
     echo "💡 Script location: $SCRIPT_DIR"
     exit 1
