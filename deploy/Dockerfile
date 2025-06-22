@@ -11,9 +11,15 @@ WORKDIR /app
 # Copy Go module files
 COPY server/go.mod server/go.sum ./
 
-# Copy source code
-COPY server/*.go ./
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o bytegrader-api .
+# Accept git commit as build argument
+ARG GIT_COMMIT=unknown
+
+# Build with version, time, and commit info
+RUN VERSION=$(cat VERSION 2>/dev/null || echo "unknown") && \
+    BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ) && \
+    CGO_ENABLED=0 GOOS=linux go build \
+    -ldflags "-X main.Version=$VERSION -X main.BuildTime=$BUILD_TIME -X main.GitCommit=$GIT_COMMIT" \
+    -a -installsuffix cgo -o bytegrader-api .
 
 # --- Stage 2: Create a minimal runtime image ---
 

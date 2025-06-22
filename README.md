@@ -85,6 +85,10 @@ cd /home/bytegrader/app
 docker compose logs -f
 ```
 
+## API Endpoints
+
+See [the API endpoints page](/doc/api-endpoints.md) for a full list of endpoints and supported HTTP methods.
+
 ## Notes
 
 ### Check Logs

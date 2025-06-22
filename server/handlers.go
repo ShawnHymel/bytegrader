@@ -27,6 +27,13 @@ type ErrorResponse struct {
     Error string `json:"error"`
 }
 
+// Version response structure
+type VersionResponse struct {
+    Version   string `json:"version"`
+    BuildTime string `json:"build_time"`
+    GitCommit string `json:"git_commit,omitempty"`
+}
+
 // Accept file uploads and queues them for processing
 func submitHandler(w http.ResponseWriter, r *http.Request) {
     fmt.Printf("📥 Submit handler started\n")
@@ -239,4 +246,17 @@ func configHandler(w http.ResponseWriter, r *http.Request) {
     }
     
     json.NewEncoder(w).Encode(configInfo)
+}
+
+// Return version information
+func versionHandler(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Content-Type", "application/json")
+    
+    response := VersionResponse{
+        Version:   Version,
+        BuildTime: BuildTime,
+        GitCommit: GitCommit,
+    }
+    
+    json.NewEncoder(w).Encode(response)
 }

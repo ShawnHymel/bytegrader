@@ -11,6 +11,13 @@ import (
     "github.com/docker/docker/client"
 )
 
+// Version information (injected at build time)
+var (
+    Version   = "dev"      // Overridden by -ldflags during build
+    BuildTime = "unknown"  // Overridden by -ldflags during build
+    GitCommit = "unknown"  // Overridden by -ldflags during build
+)
+
 // Global variables
 var (
     config           *Config
@@ -21,11 +28,19 @@ var (
 // Initializes the server, loads configuration, and starts the API
 func main() {
 
+    // Print version information on startup
+    fmt.Printf("🚀 ByteGrader API v%s starting...\n", Version)
+    fmt.Printf("   Built: %s\n", BuildTime)
+    if GitCommit != "unknown" {
+        fmt.Printf("   Commit: %s\n", GitCommit)
+    }
+    fmt.Println("")
+
     // Load configuration (from environment variables or defaults)
     config = loadConfig()
     
     // Print configuration on startup
-    fmt.Printf("⚙️ ByteGrader API starting with configuration:\n")
+    fmt.Printf("⚙️ Configuration:\n")
     fmt.Printf("   Port: %s\n", config.Port)
     fmt.Printf("   Max file size: %d MB\n", config.MaxFileSize/(1024*1024))
     fmt.Printf("   Grading timeout: %v\n", config.GradingTimeout)
@@ -134,8 +149,9 @@ func main() {
     mux.HandleFunc("/queue", protectedEndpoint(queueStatusHandler))
     mux.HandleFunc("/config", protectedEndpoint(configHandler))
     
-    // Health endpoint without security (for load balancer checks)
+    // Public endpoints (no auth required)
     mux.HandleFunc("/health", healthHandler)
+    mux.HandleFunc("/version", versionHandler)
 
     // Print API startup information
     fmt.Printf("🚀 ByteGrader API running on port %s\n", config.Port)

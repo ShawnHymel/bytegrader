@@ -63,6 +63,11 @@ mkdir -p server
 cp "$REPO_DIR/server"/*.go server/
 cp "$REPO_DIR/server/go.mod" server/
 cp "$REPO_DIR/server/go.sum" server/
+cp "$REPO_DIR/VERSION" .
+
+# Calculate git info
+GIT_COMMIT=$(cd "$REPO_DIR" && git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+echo "📦 Using Git commit: $GIT_COMMIT"
 
 # Get current user and docker group IDs for container permissions
 if [ -n "$SUDO_USER" ]; then
@@ -136,7 +141,7 @@ else
     echo "⚠️  No graders directory found"
 fi
 
-echo "🐳 Building and starting ByteGrader..."
+echo "🐳 Building "Docker image..."
 
 # Stop any existing containers
 docker compose down 2>/dev/null || true
@@ -145,7 +150,8 @@ docker compose down 2>/dev/null || true
 docker compose build --no-cache \
   --build-arg USER_ID="$DOCKER_USER_ID" \
   --build-arg GROUP_ID="$DOCKER_GROUP_ID" \
-  --build-arg DOCKER_GID="$DOCKER_GROUP_ID"
+  --build-arg DOCKER_GID="$DOCKER_GROUP_ID" \
+  --build-arg GIT_COMMIT="$GIT_COMMIT"
 
 # Fix volume ownership to match container user
 echo "🔧 Fixing volume permissions..."
