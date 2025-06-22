@@ -10,6 +10,11 @@ WORKDIR /app
 
 # Copy Go module files
 COPY server/go.mod server/go.sum ./
+RUN go mod download
+
+# Copy source code and version
+COPY server/*.go ./
+COPY VERSION ./
 
 # Accept git commit as build argument
 ARG GIT_COMMIT=unknown
