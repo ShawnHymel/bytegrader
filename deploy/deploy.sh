@@ -59,9 +59,10 @@ cd "$APP_DIR"
 echo "📂 Copying source files from repository..."
 
 # Copy source files using absolute paths
-cp "$REPO_DIR/server"/*.go .
-cp "$REPO_DIR/server/go.mod" .
-cp "$REPO_DIR/server/go.sum" .
+mkdir -p server
+cp "$REPO_DIR/server"/*.go server/
+cp "$REPO_DIR/server/go.mod" server/
+cp "$REPO_DIR/server/go.sum" server/
 
 # Get current user and docker group IDs for container permissions
 if [ -n "$SUDO_USER" ]; then
