@@ -7,6 +7,7 @@ import (
     "net/http"
     "os"
     "path/filepath"
+    "strconv"
     "time"
 )
 
@@ -39,10 +40,25 @@ func submitHandler(w http.ResponseWriter, r *http.Request) {
     fmt.Printf("📥 Submit handler started\n")
     w.Header().Set("Content-Type", "application/json")
 
+    // Check if method is POST
     if r.Method != "POST" {
         w.WriteHeader(http.StatusMethodNotAllowed)
         json.NewEncoder(w).Encode(ErrorResponse{Error: "Only POST method allowed"})
         return
+    }
+
+    // Pre-check Content-Length header if present
+    if contentLength := r.Header.Get("Content-Length"); contentLength != "" {
+        if length, err := strconv.ParseInt(contentLength, 10, 64); err == nil {
+            if length > config.MaxFileSize * 2 { // Allow 2x for multipart overhead
+                w.WriteHeader(http.StatusBadRequest)
+                json.NewEncoder(w).Encode(ErrorResponse{
+                    Error: fmt.Sprintf("Request too large. Content-Length: %d bytes, Maximum file size: %d MB", 
+                        length, config.MaxFileSize/(1024*1024)),
+                })
+                return
+            }
+        }
     }
 
     // Parse the multipart form with configured max file size
@@ -69,7 +85,8 @@ func submitHandler(w http.ResponseWriter, r *http.Request) {
     if header.Size > config.MaxFileSize {
         w.WriteHeader(http.StatusBadRequest)
         json.NewEncoder(w).Encode(ErrorResponse{
-            Error: fmt.Sprintf("File too large. Maximum size: %d MB", config.MaxFileSize/(1024*1024)),
+            Error: fmt.Sprintf("File too large. File size: %.2f MB, Maximum allowed: %d MB", 
+                float64(header.Size)/(1024*1024), config.MaxFileSize/(1024*1024)),
         })
         return
     }
