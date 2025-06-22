@@ -251,6 +251,14 @@ You can view the queue from an approved IP address and with the correct API key:
 
 curl -H "X-API-Key: <API_KEY>" https://<SUBDOMAIN>.<DOMAIN>/queue
 
+### Server Health Check
+
+There is a quick and dirty health check script you can run to get stats on the server (CPU, RAM, disk usage, etc.):
+
+```sh
+bash /home/bytegrader/app/health-check.sh
+```
+
 ### Update Go Dependences
 
 To update Go dependencies (i.e. if you import a new package in *main.go* or want to update package listings in *go.mod* and *go.sum*), run the following:

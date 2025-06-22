@@ -96,23 +96,17 @@ func (q *JobQueue) runContainerGrader(job *Job, tempDir string) *JobResult {
     fmt.Printf("⏳ Waiting for grading (timeout: %v)...\n", timeout)
     
     // Wait for container to complete with timeout (blocking)
-    if err := q.waitForContainerCompletion(ctx, cli, containerID, timeout); err != nil {
+    exitCode, err := q.waitForContainerCompletion(ctx, cli, containerID, timeout)
+    if err != nil {
         // Stop the container on timeout/error
         cli.ContainerStop(ctx, containerID, container.StopOptions{})
         return &JobResult{Error: fmt.Sprintf("Container failed: %v", err)}
-    }
-    
-    // Get container info to check exit code
-    inspect, err := cli.ContainerInspect(ctx, containerID)
-    if err != nil {
-        return &JobResult{Error: fmt.Sprintf("Failed to inspect container: %v", err)}
     }
 
     // Always try to read results first, regardless of exit code
     result := q.readResultsFromSharedVolume(jobWorkspace)
 
     // Check if the container exited with an error code
-    exitCode := inspect.State.ExitCode
     if exitCode != 0 {
         fmt.Printf("⚠️  Container %s exited with code %d\n", containerID[:12], exitCode)
         
@@ -141,7 +135,12 @@ func (q *JobQueue) runContainerGrader(job *Job, tempDir string) *JobResult {
 }
 
 // Wait for container to complete with timeout and status updates (blocking)
-func (q *JobQueue) waitForContainerCompletion(ctx context.Context, cli *client.Client, containerID string, timeout time.Duration) error {
+func (q *JobQueue) waitForContainerCompletion(
+    tx context.Context, 
+    cli *client.Client, 
+    containerID string, 
+    timeout time.Duration
+) (int64, error) {
     
     fmt.Printf("⏳ Waiting for container %s to complete (timeout: %v)...\n", containerID[:12], timeout)
     
@@ -157,13 +156,13 @@ func (q *JobQueue) waitForContainerCompletion(ctx context.Context, cli *client.C
         select {
         case err := <-errCh:
             if err != nil {
-                return fmt.Errorf("error waiting for container: %v", err)
+                return -1, fmt.Errorf("error waiting for container: %v", err)
             }
-            return nil
+            return -1, fmt.Errorf("container wait channel closed unexpectedly")
             
         case status := <-statusCh:
             fmt.Printf("✅ Container %s completed with exit code: %d\n", containerID[:12], status.StatusCode)
-            return nil
+            return status.StatusCode, nil
             
         case <-ticker.C:
             // Log periodic status updates
@@ -171,7 +170,7 @@ func (q *JobQueue) waitForContainerCompletion(ctx context.Context, cli *client.C
             
         case <-ctx.Done():
             fmt.Printf("⏰ Container %s timed out after %v\n", containerID[:12], timeout)
-            return fmt.Errorf("container execution timed out after %v", timeout)
+            return -1, fmt.Errorf("container execution timed out after %v", timeout)
         }
     }
 }
