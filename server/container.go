@@ -136,7 +136,7 @@ func (q *JobQueue) runContainerGrader(job *Job, tempDir string) *JobResult {
 
 // Wait for container to complete with timeout and status updates (blocking)
 func (q *JobQueue) waitForContainerCompletion(
-    tx context.Context, 
+    ctx context.Context, 
     cli *client.Client, 
     containerID string, 
     timeout time.Duration
