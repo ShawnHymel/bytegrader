@@ -9,11 +9,10 @@ FROM golang:1.24-alpine AS builder
 WORKDIR /app
 
 # Copy Go module files
-COPY go.mod go.sum ./
-RUN go mod download
+COPY server/go.mod server/go.sum ./
 
 # Copy source code
-COPY main.go ./
+COPY server/*.go ./
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o bytegrader-api .
 
 # --- Stage 2: Create a minimal runtime image ---
