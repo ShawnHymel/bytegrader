@@ -162,6 +162,11 @@ docker run --rm -v bytegrader-workspace:/workspace alpine sh -c "
   echo 'Volume ownership fixed to $DOCKER_USER_ID:$DOCKER_GROUP_ID'
 "
 
+# Copy health check script
+echo "📋 Copying health check script..."
+cp "$REPO_DIR/deploy/health-check.sh" .
+chmod +x health-check.sh
+
 # Start the services
 docker compose up -d
 
