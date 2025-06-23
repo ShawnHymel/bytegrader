@@ -1,5 +1,4 @@
 # ByteGrader specific
-*.zip
 *.tar.gz
 *.log
 

@@ -34,5 +34,6 @@ jobs:
         
     - name: Test grader builds
       run: |
-        cd graders/test-stub
-        docker build -t test-build .
+        cd graders/
+        chmod +x build.sh
+        ./build.sh
