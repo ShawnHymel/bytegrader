@@ -8,3 +8,13 @@ assignments:
       memory_mb: 256
       cpu_limit: 0.25
       pids_limit: 50
+
+  make-c-add:
+    image: "bytegrader-make-c-add:latest"
+    description: "C program that adds two float numbers using make"
+    enabled: true
+    timeout_minutes: 10
+    resources:
+      memory_mb: 256
+      cpu_limit: 0.25
+      pids_limit: 50
