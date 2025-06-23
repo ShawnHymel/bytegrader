@@ -32,9 +32,7 @@ for dir in */; do
             if [ -n "$image_name" ]; then
                 echo "✅ Building $assignment -> $image_name"
                 
-                cd "$assignment"
-                docker build -t "$image_name" .
-                cd ..
+                docker build -t "$image_name" -f "$assignment/Dockerfile" .
                 echo "✅ Built $image_name successfully"
             else
                 echo "❌ Could not extract image name for $assignment"
