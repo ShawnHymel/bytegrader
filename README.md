@@ -294,8 +294,6 @@ Note that if you need to get the "local" IP address (what the App container sees
 
 ## Todo
 
- * Create grader template/helper functions
- * Create simple make/C grader example
  * Add full integration test with make/C grader example
  * Make multi-stage Docker build for adding in environments (e.g. Arduino, ESP-IDF)
  * Build API for hosting site and LearnDash
