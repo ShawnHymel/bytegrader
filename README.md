@@ -292,6 +292,10 @@ bash deploy/deploy.sh ../app
 
 Note that if you need to get the "local" IP address (what the App container sees when making calls from the host server), as `127.0.0.1` and `localhost` won't often work, you can run `docker compose logs | grep "Security check"`. This will likely be `172.18.0.0/16` so the App container can see the host.
 
+### Release Notes
+
+Release notes are kept in [CHANGELOG.md](./CHANGELOG.md).
+
 ## Todo
 
  * Add full integration test with make/C grader example
