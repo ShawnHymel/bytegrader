@@ -53,8 +53,6 @@ echo "✅ DNS resolution working"
 # Get certificates for all domains
 echo "📜 Obtaining SSL certificates..."
 certbot --nginx \
-  -d $BYTEGRADER_MAIN_DOMAIN \
-  -d www.$BYTEGRADER_MAIN_DOMAIN \
   -d $BYTEGRADER_COURSE_DOMAIN \
   --non-interactive \
   --agree-tos \
