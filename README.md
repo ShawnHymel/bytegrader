@@ -205,13 +205,13 @@ curl http://localhost:8080/health
 From your home/office computer (assuming you've whitelisted your public IP address), you can test submitting a dummy file for grading using the *test-stub* grader (which always returns a static grade/feedback so long as it receives a valid .zip file).
 
 ```sh
-curl -X POST -H "X-API-Key: <API_KEY>" -F "file=@test/submission-make-c-hello.zip" https://<SUBDOMAIN>.<DOMAIN>/submit?assignment=test-stub
+curl -X POST -H "X-API-Key: <API_KEY>" -H "X-Username: test-user" -F "file=@test/submission-make-c-hello.zip" https://<SUBDOMAIN>.<DOMAIN>/submit?assignment=test-stub
 ```
 
 You should receive a "File submitted for grading" JSON message back from the server. Copy the *job_id* and check the status of the grading job:
 
 ```sh
-curl -H "X-API-Key: <API_KEY>" https://<SUBDOMAIN>.<DOMAIN>/status/<JOB_ID>
+curl -H "X-API-Key: <API_KEY>" -H "X-Username: test-user" https://<SUBDOMAIN>.<DOMAIN>/status/<JOB_ID>
 ```
 
 You can watch the real-time logs of the server with:
