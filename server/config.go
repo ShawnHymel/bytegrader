@@ -23,6 +23,7 @@ type Config struct {
 
     // Security configuration
     RequireAPIKey       bool          // Enable API key authentication
+    RequireUsername     bool          // Require username header (always true for rate limiting)
     ValidAPIKeys        []string      // Valid API keys
     AllowedIPs          []string      // IP whitelist for maximum security
 
@@ -55,6 +56,7 @@ func loadConfig() *Config {
         
         // Security configuration
         RequireAPIKey:       getEnvBool("REQUIRE_API_KEY", false),
+        RequireUsername:     true, // Always require username for proper rate limiting
         ValidAPIKeys:        parseAPIKeys(getEnv("VALID_API_KEYS", "")),
         AllowedIPs:          parseAllowedIPs(getEnv("ALLOWED_IPS", "")),
         

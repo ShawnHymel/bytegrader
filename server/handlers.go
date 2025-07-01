@@ -157,6 +157,9 @@ func submitHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+    // Get username for job ownership
+    username := getUsername(r)
+
     // Create job (no file contents in RAM)
     job := &Job{
         ID:        jobID,
@@ -170,7 +173,7 @@ func submitHandler(w http.ResponseWriter, r *http.Request) {
     }
 
     // Add to queue
-    jobQueue.addJob(job)
+    jobQueue.addJob(job, username)
 
     fmt.Printf("📁 File saved: %s (Job: %s)\n", filePath, jobID)
 
@@ -204,7 +207,15 @@ func statusHandler(w http.ResponseWriter, r *http.Request) {
         return
     }
 
-    // Check if job is still processing
+    // Check if the requesting user owns this job
+    requestingUser := getUsername(r)
+    if job.Username != requestingUser {
+        w.WriteHeader(http.StatusForbidden)
+        json.NewEncoder(w).Encode(ErrorResponse{Error: "Username does not match job owner"})
+        return
+    }
+
+    // Return job status
     response := StatusResponse{Job: job}
     json.NewEncoder(w).Encode(response)
 }

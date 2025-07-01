@@ -94,6 +94,10 @@ func main() {
         fmt.Println("   Set REQUIRE_API_KEY=true for production use")
     }
 
+    // Print username requirement
+    fmt.Println("   Username required for all protected endpoints")
+    fmt.Println("   Send username in 'X-Username' header")
+
     // Print IP whitelist configuration
     if len(config.AllowedIPs) == 0 {
         fmt.Printf("   IP Whitelist: DISABLED (allow all IPs) - ⚠️  DEVELOPMENT ONLY\n")

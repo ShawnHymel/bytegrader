@@ -24,22 +24,25 @@ func newRateLimitManager() *RateLimitManager {
 }
 
 // Get or create rate limiter for IP
-func (rlm *RateLimitManager) getLimiter(ip string) *rate.Limiter {
+func (rlm *RateLimitManager) getLimiter(ip, username string) *rate.Limiter {
     rlm.mutex.Lock()
     defer rlm.mutex.Unlock()
+
+    // Create composite key from IP and username
+    key := fmt.Sprintf("%s:%s", ip, username)
     
-    limiter, exists := rlm.limiters[ip]
+    limiter, exists := rlm.limiters[key]
     if !exists {
         // Create new limiter with burst = maxRequests and refill rate
         // Rate: requests per window converted to requests per second
         requestsPerSecond := float64(config.RateLimitRequests) / config.RateLimitWindow.Seconds()
         limiter = rate.NewLimiter(rate.Limit(requestsPerSecond), config.RateLimitRequests)
-        rlm.limiters[ip] = limiter
-        
-        fmt.Printf("🚦 Created rate limiter for IP %s: %.4f req/sec, burst %d\n", 
-            ip, requestsPerSecond, config.RateLimitRequests)
+        rlm.limiters[key] = limiter
+
+        fmt.Printf("🚦 Created rate limiter for IP %s, user %s: %.4f req/sec, burst %d\n",
+            ip, username, requestsPerSecond, config.RateLimitRequests)
     }
-    
+
     return limiter
 }
 
@@ -82,11 +85,12 @@ func rateLimitMiddleware(next http.HandlerFunc) http.HandlerFunc {
         
         // Get limiter information
         clientIP := getClientIP(r)
-        limiter := rateLimitManager.getLimiter(clientIP)
+        username := getUsername(r)
+        limiter := rateLimitManager.getLimiter(clientIP, username)
         
         // Show if rate limit exceeded for IP address
         if !limiter.Allow() {
-            fmt.Printf("❌ Rate limit exceeded for IP: %s\n", clientIP)
+            fmt.Printf("❌ Rate limit exceeded for IP: %s, user: %s\n", clientIP, username)
             w.WriteHeader(http.StatusTooManyRequests)
             json.NewEncoder(w).Encode(ErrorResponse{
                 Error: fmt.Sprintf("Rate limit exceeded. Maximum %d requests per %v allowed.", 

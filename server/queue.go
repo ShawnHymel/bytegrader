@@ -21,6 +21,7 @@ type Job struct {
     CreatedAt time.Time `json:"created_at"`
     UpdatedAt time.Time `json:"updated_at"`
     AssignmentID string `json:"assignment_id,omitempty"` // Which assignment this is for
+    Username     string `json:"username,omitempty"`      // User who submitted this job
 }
 
 // JobResult represents the grading result
@@ -41,10 +42,12 @@ type JobQueue struct {
 }
 
 // Add a job to the queue and map it to its job ID
-func (q *JobQueue) addJob(job *Job) {
+func (q *JobQueue) addJob(job *Job, username string) {
     q.mutex.Lock()
     defer q.mutex.Unlock()
-    
+
+    // Generate a unique job ID
+    job.Username = username
     q.jobs[job.ID] = job
     q.queue <- job.ID
     

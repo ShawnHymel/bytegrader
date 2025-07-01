@@ -115,6 +115,18 @@ func validateSourceIP(r *http.Request) bool {
     return false
 }
 
+// Extract username from request headers
+func getUsername(r *http.Request) string {
+    username := r.Header.Get("X-Username")
+    return username
+}
+
+// Validate that username is present in request
+func validateUsername(r *http.Request) bool {
+    username := getUsername(r)
+    return username != ""
+}
+
 // Apply security checks to requests
 func securityMiddleware(next http.HandlerFunc) http.HandlerFunc {
     return func(w http.ResponseWriter, r *http.Request) {
@@ -144,8 +156,18 @@ func securityMiddleware(next http.HandlerFunc) http.HandlerFunc {
             json.NewEncoder(w).Encode(ErrorResponse{Error: "Invalid or missing API key"})
             return
         }
+
+        // Check username (required for rate limiting)
+        if !validateUsername(r) {
+            fmt.Printf("❌ Username validation failed for %s %s from %s\n", r.Method, r.URL.Path, clientIP)
+            w.WriteHeader(http.StatusBadRequest)
+            json.NewEncoder(w).Encode(ErrorResponse{Error: "Username required (X-Username header)"})
+            return
+        }
         
-        fmt.Printf("✅ All security checks passed for %s %s from %s\n", r.Method, r.URL.Path, clientIP)
+        // Log successful security checks
+        username := getUsername(r)
+        fmt.Printf("✅ All security checks passed for %s %s from %s (user: %s)\n", r.Method, r.URL.Path, clientIP, username)
         
         // All security checks passed, proceed to handler
         next(w, r)
