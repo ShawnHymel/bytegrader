@@ -55,10 +55,10 @@ func loadConfig() *Config {
         GraderRegistryPath: getEnv("GRADER_REGISTRY_PATH", "/usr/local/bin/graders/registry.yaml"),
         
         // Security configuration
-        RequireAPIKey       bool          // Enable API key authentication
-        RequireUsername:    true,         // Always require username for proper rate limiting
-        ValidAPIKeys        []string      // Valid API keys
-        AllowedIPs          []string      // IP whitelist for maximum security
+        RequireAPIKey:       getEnvBool("REQUIRE_API_KEY", false),
+        RequireUsername:     true, // Always require username for proper rate limiting
+        ValidAPIKeys:        parseAPIKeys(getEnv("VALID_API_KEYS", "")),
+        AllowedIPs:          parseAllowedIPs(getEnv("ALLOWED_IPS", "")),
         
         // Rate limiting configuration
         RateLimitEnabled:    getEnvBool("RATE_LIMIT_ENABLED", true),
