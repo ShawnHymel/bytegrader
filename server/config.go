@@ -23,6 +23,7 @@ type Config struct {
 
     // Security configuration
     RequireAPIKey       bool          // Enable API key authentication
+    RequireUsername     bool          // Require username header (always true for rate limiting)
     ValidAPIKeys        []string      // Valid API keys
     AllowedIPs          []string      // IP whitelist for maximum security
 
@@ -54,9 +55,10 @@ func loadConfig() *Config {
         GraderRegistryPath: getEnv("GRADER_REGISTRY_PATH", "/usr/local/bin/graders/registry.yaml"),
         
         // Security configuration
-        RequireAPIKey:       getEnvBool("REQUIRE_API_KEY", false),
-        ValidAPIKeys:        parseAPIKeys(getEnv("VALID_API_KEYS", "")),
-        AllowedIPs:          parseAllowedIPs(getEnv("ALLOWED_IPS", "")),
+        RequireAPIKey       bool          // Enable API key authentication
+        RequireUsername:    true,         // Always require username for proper rate limiting
+        ValidAPIKeys        []string      // Valid API keys
+        AllowedIPs          []string      // IP whitelist for maximum security
         
         // Rate limiting configuration
         RateLimitEnabled:    getEnvBool("RATE_LIMIT_ENABLED", true),
