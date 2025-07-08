@@ -146,16 +146,19 @@ func main() {
 
     // Create a custom mux to handle CORS globally
     mux := http.NewServeMux()
-    
-    // API endpoints with security and rate limiting
-    mux.HandleFunc("/submit", protectedEndpoint(submitHandler))
-    mux.HandleFunc("/status/", protectedEndpoint(statusHandler))
-    mux.HandleFunc("/queue", protectedEndpoint(queueStatusHandler))
-    mux.HandleFunc("/config", protectedEndpoint(configHandler))
-    
+
+
     // Public endpoints (no auth required)
     mux.HandleFunc("/health", healthHandler)
-    mux.HandleFunc("/version", versionHandler)
+
+    // Admin endpoints (API key required, no username needed)
+    mux.HandleFunc("/config", adminEndpoint(configHandler))
+    mux.HandleFunc("/version", adminEndpoint(versionHandler))
+
+    // User endpoints (API key + username required)
+    mux.HandleFunc("/queue", protectedEndpoint(queueStatusHandler))
+    mux.HandleFunc("/status/", protectedEndpoint(statusHandler))
+    mux.HandleFunc("/submit", protectedEndpoint(submitHandler))
 
     // Print API startup information
     fmt.Printf("🚀 ByteGrader API running on port %s\n", config.Port)
