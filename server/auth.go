@@ -127,6 +127,49 @@ func validateUsername(r *http.Request) bool {
     return username != ""
 }
 
+// Apply security checks for admin endpoints (API key + IP, but no username required)
+func adminSecurityMiddleware(next http.HandlerFunc) http.HandlerFunc {
+    return func(w http.ResponseWriter, r *http.Request) {
+        clientIP := getClientIP(r)
+        
+        // Set CORS headers for browser compatibility
+        setCORSHeaders(w)
+        
+        // Handle preflight requests
+        if r.Method == "OPTIONS" {
+            w.WriteHeader(http.StatusOK)
+            return
+        }
+        
+        // Check IP whitelist (primary security)
+        if !validateSourceIP(r) {
+            fmt.Printf("❌ IP validation failed for admin endpoint %s %s from %s\n", r.Method, r.URL.Path, clientIP)
+            w.WriteHeader(http.StatusForbidden)
+            json.NewEncoder(w).Encode(ErrorResponse{Error: "IP address not allowed"})
+            return
+        }
+        
+        // Check API key (authentication)
+        if !authenticateRequest(r) {
+            fmt.Printf("❌ Authentication failed for admin endpoint %s %s\n", r.Method, r.URL.Path)
+            w.WriteHeader(http.StatusUnauthorized)
+            json.NewEncoder(w).Encode(ErrorResponse{Error: "Invalid or missing API key"})
+            return
+        }
+        
+        // Log successful security checks (no username required for admin endpoints)
+        fmt.Printf("✅ Admin security checks passed for %s %s from %s\n", r.Method, r.URL.Path, clientIP)
+        
+        // All security checks passed, proceed to handler
+        next(w, r)
+    }
+}
+
+// Admin endpoint wrapper (API key required, but no username or rate limiting)
+func adminEndpoint(handler http.HandlerFunc) http.HandlerFunc {
+    return adminSecurityMiddleware(handler)
+}
+
 // Apply security checks to requests
 func securityMiddleware(next http.HandlerFunc) http.HandlerFunc {
     return func(w http.ResponseWriter, r *http.Request) {
