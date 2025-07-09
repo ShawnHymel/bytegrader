@@ -11,7 +11,7 @@ When making changes, add an entry to the **Unreleased** section.
 
 ### Added
 
-- Added CONTRIBUTING.md
+- Added CONTRIBUTING.md and docs/release.md for notes on how to contribute
 - Added a "delay" test that waits for some time before returning a score
 - Added a new "admin" endpoint category that requires an API key but no username
 
