@@ -10,7 +10,7 @@ git pull
 2. Choose appropriate version number using [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 3. Review and consolidate `Unreleased` changes in **CHANGELOG.md**, assign new version number to the section
 4. Update **VERSION** file with new version number
-5. Commit changes directly to main:
+5. Commit changes directly to main (you must be on the maintainers bypass list to push to main):
 
 ```sh
 git add CHANGELOG.md VERSION
