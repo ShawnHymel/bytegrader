@@ -9,7 +9,7 @@ def grade_submission(extracted_path: str) -> GradingResult:
     """
     
     # Simulate some grading time
-    time.sleep(30)
+    time.sleep(60)
     
     # Construct dummy score and feedback
     result = GradingResult(
