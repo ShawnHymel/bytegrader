@@ -178,7 +178,7 @@ func submitHandler(w http.ResponseWriter, r *http.Request) {
         activeJobs := jobQueue.activeJobs
         jobQueue.activeJobsMutex.Unlock()
         
-        errorMsg := fmt.Sprintf("You already have an active submission for this assignment (Job ID: %s). Please wait for it to complete before submitting again.", existingJobID[:8])
+        errorMsg := fmt.Sprintf("You already have an active submission for this assignment (Job ID: %s). Please wait for it to complete before submitting again.", existingJobID)
         
         w.WriteHeader(http.StatusConflict) // 409 Conflict
         json.NewEncoder(w).Encode(map[string]interface{}{
