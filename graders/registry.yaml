@@ -9,6 +9,16 @@ assignments:
       cpu_limit: 0.25
       pids_limit: 50
 
+  test-delay:
+    image: "bytegrader-test-delay:latest"
+    description: "Test grader that simulates a delay and returns constant results"
+    enabled: true
+    timeout_minutes: 5
+    resources:
+      memory_mb: 256
+      cpu_limit: 0.25
+      pids_limit: 50
+
   make-c-add:
     image: "bytegrader-make-c-add:latest"
     description: "C program that adds two float numbers using make"
