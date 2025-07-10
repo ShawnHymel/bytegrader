@@ -199,9 +199,9 @@ if docker compose ps | grep -q "Up"; then
     # Show appropriate test commands based on security level
     if [ "$BYTEGRADER_REQUIRE_API_KEY" = "true" ]; then
         FIRST_API_KEY="$BYTEGRADER_VALID_API_KEYS"
-        echo "   curl -H \"X-API-Key: $FIRST_API_KEY\" http://localhost:8080/queue"
+        echo "   curl -H \"X-API-Key: $FIRST_API_KEY\" -H \"X-Username: test-user\" http://localhost:8080/queue"
     else
-        echo "   curl http://localhost:8080/queue"
+        echo "   curl -H \"X-Username: test-user\" http://localhost:8080/queue"
     fi
     echo ""
     
@@ -209,9 +209,9 @@ if docker compose ps | grep -q "Up"; then
     echo "   curl http://$BYTEGRADER_COURSE_DOMAIN/health"
     
     if [ "$BYTEGRADER_REQUIRE_API_KEY" = "true" ]; then
-        echo "   curl -H \"X-API-Key: $FIRST_API_KEY\" https://$BYTEGRADER_COURSE_DOMAIN/queue"
+        echo "   curl -H \"X-API-Key: $FIRST_API_KEY\" -H \"X-Username: test-user\" https://$BYTEGRADER_COURSE_DOMAIN/queue"
     else
-        echo "   curl https://$BYTEGRADER_COURSE_DOMAIN/queue"
+        echo "   curl -H \"X-Username: test-user\" https://$BYTEGRADER_COURSE_DOMAIN/queue"
     fi
     echo ""
     

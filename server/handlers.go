@@ -160,6 +160,39 @@ func submitHandler(w http.ResponseWriter, r *http.Request) {
     // Get username for job ownership
     username := getUsername(r)
 
+    // Check if user already has an active job for this assignment
+    hasActive, existingJobID, err := hasActiveJob(username, assignmentID)
+    if err != nil {
+        w.WriteHeader(http.StatusInternalServerError)
+        json.NewEncoder(w).Encode(ErrorResponse{Error: "Failed to check for existing jobs"})
+        return
+    }
+
+    // If user has an active job, return conflict response
+    if hasActive {
+
+        // Get queue status for additional info
+        queueLength := len(jobQueue.queue)
+        
+        jobQueue.activeJobsMutex.Lock()
+        activeJobs := jobQueue.activeJobs
+        jobQueue.activeJobsMutex.Unlock()
+        
+        errorMsg := fmt.Sprintf("You already have an active submission for this assignment (Job ID: %s). Please wait for it to complete before submitting again.", existingJobID)
+        
+        w.WriteHeader(http.StatusConflict) // 409 Conflict
+        json.NewEncoder(w).Encode(map[string]interface{}{
+            "error": errorMsg,
+            "existing_job_id": existingJobID,
+            "queue_info": map[string]interface{}{
+                "queue_length": queueLength,
+                "active_jobs": activeJobs,
+                "max_concurrent": config.MaxConcurrentJobs,
+            },
+        })
+        return
+    }
+
     // Create job (no file contents in RAM)
     job := &Job{
         ID:        jobID,
@@ -185,6 +218,26 @@ func submitHandler(w http.ResponseWriter, r *http.Request) {
     }
 
     json.NewEncoder(w).Encode(response)
+}
+
+// Check if user already has an active job for this assignment
+func hasActiveJob(username, assignmentID string) (bool, string, error) {
+
+    // Get all jobs from the queue
+    jobQueue.mutex.RLock()
+    defer jobQueue.mutex.RUnlock()
+    
+    for jobID, job := range jobQueue.jobs {
+
+        // Check if this job matches user and assignment and is active
+        if job.Username == username && 
+           job.AssignmentID == assignmentID && 
+           (job.Status == "queued" || job.Status == "processing") {
+            return true, jobID, nil
+        }
+    }
+    
+    return false, "", nil
 }
 
 // Return the status of a specific job

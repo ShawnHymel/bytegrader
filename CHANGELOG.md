@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 When making changes, add an entry to the **Unreleased** section.
 
+## [Unreleased]
+
+### Changed
+
+- Allow only one submission per username per assignment
+
 ## [0.8.1] - 2025-07-09
 
 ### Added
