@@ -25,6 +25,12 @@ While ByteGrader is optimized for embedded systems and hardware-centric courses,
 - Verifying Python scripts for edge AI inference pipelines
 - Ensuring students follow proper function use and coding standards
 
+## Clients
+
+The following clients have been tested with ByteGrader. Please see their respective documentation for version compatibility.
+
+* [ByteGrader Client for LearnDash](https://github.com/ShawnHymel/bytegrader-client-learndash)
+
 ## Getting Started
 
 If you want to test a grader locally, see the [Developing a Grader](#developing-a-grader) section to see how to spin up a container with a grader. Setting up the full server will require a little more effort.
