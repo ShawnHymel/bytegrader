@@ -203,19 +203,7 @@ See [the API endpoints page](/doc/api-endpoints.md) for a full list of endpoints
 
 ## Developing a Grader
 
-A *grader* is a combination of Docker image and Python grading script. Every time a student submits a file (a *.zip* file) to a particular assignment, the *API app* spins up a container from an image built for that assignment. Start with the *graders/test-stub* grader as a boilerplate template.
-
-Here is how you build and run the *test-stub* grader locally (with an example submission):
-
-```sh
-cd graders/
-docker build -t bytegrader-test-stub -f test-stub/Dockerfile .
-cd ..
-mkdir -p test/results/
-docker run --rm -v "$(pwd)/test/submission-make-c-hello.zip:/submission/submission.zip:ro" -v "$(pwd)/test/results/:/results" bytegrader-test-stub
-```
-
-When you run the image, it will read in the *submission-make-c-hello.zip* file, rename to *submission.zip* in the container, process it with *grader.py*, and store the results in *test/results* as *output.json*. Note that *test-stub* does not actually build or run any submitted code. It simply verifies that the file is a *.zip* archive and returns a constant score and feedback.
+See [Creating a Grader](doc/creating-a-grader.md) for more information.
 
 ## Update Process
 
