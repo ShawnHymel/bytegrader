@@ -25,24 +25,77 @@ ALLOWED_FILE_TYPES = [
 # Add graders directory to path so we can import result.py
 sys.path.insert(0, '/graders')
 
+def set_permissions(submission_path, results_dir):
+    """Set permissions for job directories to ensure security and isolation"""
+    import stat
+
+    # Get job ID from environment variable
+    job_id = os.getenv("BYTEGRADER_JOB_ID")
+    if not job_id:
+        raise ValueError("BYTEGRADER_JOB_ID environment variable not set")
+
+    # Make all other job directories inaccessible (no read/execute for others)
+    jobs_dir = "/workspace/jobs"
+    try:
+        for other_job in os.listdir(jobs_dir):
+
+            # Don't modify our own job directory
+            if other_job != job_id:
+                other_job_path = os.path.join(jobs_dir, other_job)
+                if os.path.isdir(other_job_path):
+
+                    # Remove all permissions for group/other (keep owner permissions)
+                    os.chmod(other_job_path, stat.S_IRWXU)  # 0o700 - owner only
+
+    except (OSError, PermissionError) as e:
+        print(f"Warning: Could not lock other job directories: {e}", file=sys.stderr)
+    
+    # Set our job directory permissions appropriately
+    job_dir = os.path.join(jobs_dir, job_id)
+    try:
+        os.chmod(job_dir, stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP)  # 0o750 - owner+group read
+        
+        # Make submission directory read-only
+        submission_dir = os.path.join(job_dir, "submission")
+        os.chmod(submission_dir, stat.S_IRUSR | stat.S_IXUSR | stat.S_IRGRP | stat.S_IXGRP)  # 0o550
+        os.chmod(submission_path, stat.S_IRUSR | stat.S_IRGRP)  # 0o440 - read-only
+        
+        # Ensure results directory is writable
+        os.chmod(results_dir, stat.S_IRWXU | stat.S_IRWXG)  # 0o770 - full access for owner+group
+        
+    except (OSError, PermissionError) as e:
+        print(f"Warning: Could not set job permissions: {e}", file=sys.stderr)
+
 def determine_paths():
     """Determine file paths based on execution mode"""
 
     # If running in volume mode (production), extract to the container
     if os.getenv("BYTEGRADER_VOLUME_MODE") == "true":
 
-        # Current director should be /workspace/jobs/{job_id}
-        job_dir = os.getcwd()
+        # Get job ID from environment variable
+        job_id = os.getenv("BYTEGRADER_JOB_ID")
+        if not job_id:
+            raise ValueError("BYTEGRADER_JOB_ID environment variable not set")
+
+        # Set paths based on job ID
+        job_dir = f"/workspace/jobs/{job_id}"
+        if not os.path.exists(job_dir):
+            raise FileNotFoundError(f"Job directory does not exist: {job_dir}")
+        
+        # Paths for submission and results
         submission_path = os.path.join(job_dir, "submission", "submission.zip")
         results_dir = os.path.join(job_dir, "results")
 
+        # Lock down permissions for security
+        set_permissions(submission_path, results_dir)
+
     # If running locally, expect command line arguments
     else:
-        if len(sys.argv) != 4:
-            print("Usage: python3 main.py <submission_path> <work_dir> <results_dir>", 
+        if len(sys.argv) != 3:
+            print("Usage: python3 main.py <submission_path> <results_dir>", 
                   file=sys.stderr)
             sys.exit(1)
-        submission_path, work_dir, results_dir = sys.argv[1:4]
+        submission_path, results_dir = sys.argv[1:3]
 
     # Extract to ephemeral container filesystem (keep student files isolated)
     work_dir = "/tmp/grading"
