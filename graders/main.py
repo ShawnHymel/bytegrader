@@ -28,19 +28,34 @@ sys.path.insert(0, '/graders')
 def determine_paths():
     """Determine file paths based on execution mode"""
 
-    # If running in volume mode, use the current working directory
+    # If running in volume mode (production), extract to the container
     if os.getenv("BYTEGRADER_VOLUME_MODE") == "true":
-        work_dir = os.getcwd()
-        submission_path = os.path.join(work_dir, "submission", "submission.zip")
-        results_dir = os.path.join(work_dir, "results")
+
+        # Get job ID from environment variable
+        job_id = os.getenv("BYTEGRADER_JOB_ID")
+        if not job_id:
+            raise ValueError("BYTEGRADER_JOB_ID environment variable not set")
+
+        # Set paths based on job ID
+        job_dir = f"/workspace/jobs/{job_id}"
+        if not os.path.exists(job_dir):
+            raise FileNotFoundError(f"Job directory does not exist: {job_dir}")
+        
+        # Paths for submission and results
+        submission_path = os.path.join(job_dir, "submission", "submission.zip")
+        results_dir = os.path.join(job_dir, "results")
 
     # If running locally, expect command line arguments
     else:
-        if len(sys.argv) != 4:
-            print("Usage: python3 main.py <submission_path> <work_dir> <results_dir>", 
+        if len(sys.argv) != 3:
+            print("Usage: python3 main.py <submission_path> <results_dir>", 
                   file=sys.stderr)
             sys.exit(1)
-        submission_path, work_dir, results_dir = sys.argv[1:4]
+        submission_path, results_dir = sys.argv[1:3]
+
+    # Extract to ephemeral container filesystem (keep student files isolated)
+    work_dir = "/tmp/grading"
+    os.makedirs(work_dir, exist_ok=True)
 
     return submission_path, work_dir, results_dir
 

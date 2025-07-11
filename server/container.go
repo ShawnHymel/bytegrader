@@ -48,10 +48,13 @@ func (q *JobQueue) runContainerGrader(job *Job, tempDir string) *JobResult {
         ctx, 
         &container.Config{
             Image: assignmentConfig.Image,
-            WorkingDir: fmt.Sprintf("/workspace/jobs/%s", job.ID),
-            Env: []string{"BYTEGRADER_VOLUME_MODE=true"},
+            WorkingDir: "/workspace",  // Simplified working directory
+            Env: []string{
+                "BYTEGRADER_VOLUME_MODE=true",
+                fmt.Sprintf("BYTEGRADER_JOB_ID=%s", job.ID),  // Pass job ID as env var
+            },
             User: fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid()),
-        }, 
+        },
         &container.HostConfig{
             Mounts: []mount.Mount{
                 {

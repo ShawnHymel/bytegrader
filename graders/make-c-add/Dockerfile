@@ -41,4 +41,4 @@ USER grader
 WORKDIR /workspace
 
 # Use the framework entrypoint
-ENTRYPOINT ["python3", "/graders/main.py", "/submission/submission.zip", "/workspace", "/results"]
+ENTRYPOINT ["python3", "/graders/main.py", "/submission/submission.zip", "/results"]
