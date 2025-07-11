@@ -337,6 +337,7 @@ Release notes are kept in [CHANGELOG.md](./CHANGELOG.md).
  * Add full integration test with make/C grader example
  * Make multi-stage Docker build for adding in environments (e.g. Arduino, ESP-IDF)
  * Build API for hosting site and LearnDash
+ * Map volume workspace to */workspace* instead of */
 
 ## License
 

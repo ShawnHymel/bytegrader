@@ -28,11 +28,13 @@ sys.path.insert(0, '/graders')
 def determine_paths():
     """Determine file paths based on execution mode"""
 
-    # If running in volume mode, use the current working directory
+    # If running in volume mode (production), extract to the container
     if os.getenv("BYTEGRADER_VOLUME_MODE") == "true":
-        work_dir = os.getcwd()
-        submission_path = os.path.join(work_dir, "submission", "submission.zip")
-        results_dir = os.path.join(work_dir, "results")
+
+        # Current director should be /workspace/jobs/{job_id}
+        job_dir = os.getcwd()
+        submission_path = os.path.join(job_dir, "submission", "submission.zip")
+        results_dir = os.path.join(job_dir, "results")
 
     # If running locally, expect command line arguments
     else:
@@ -41,6 +43,10 @@ def determine_paths():
                   file=sys.stderr)
             sys.exit(1)
         submission_path, work_dir, results_dir = sys.argv[1:4]
+
+    # Extract to ephemeral container filesystem (keep student files isolated)
+    work_dir = "/tmp/grading"
+    os.makedirs(work_dir, exist_ok=True)
 
     return submission_path, work_dir, results_dir
 
