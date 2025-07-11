@@ -43,9 +43,12 @@ def set_permissions(submission_path, results_dir):
             if other_job != job_id:
                 other_job_path = os.path.join(jobs_dir, other_job)
                 if os.path.isdir(other_job_path):
-
-                    # Remove all permissions for group/other (keep owner permissions)
-                    os.chmod(other_job_path, stat.S_IRWXU)  # 0o700 - owner only
+                    try:
+                        # Remove all permissions for group/other (keep owner permissions)
+                        os.chown(other_job_path, 0, 0)          # Set ownership to root:root
+                        os.chmod(other_job_path, stat.S_IRWXU)  # 0o700 - owner only
+                    except (OSError, PermissionError) as e:
+                        print(f"Warning: Could not set permissions for {other_job_path}: {e}", file=sys.stderr)
 
     except (OSError, PermissionError) as e:
         print(f"Warning: Could not lock other job directories: {e}", file=sys.stderr)
