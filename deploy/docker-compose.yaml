@@ -65,11 +65,11 @@ services:
     deploy:
       resources:
         limits:
-          memory: 800M
-          cpus: '1.0'
+          memory: 600M
+          cpus: '0.8'
         reservations:
-          memory: 400M
-          cpus: '0.3'
+          memory: 300M
+          cpus: '0.2'
 
 volumes:
   bytegrader-workspace:

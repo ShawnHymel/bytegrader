@@ -12,7 +12,7 @@ When making changes, add an entry to the **Unreleased** section.
 ### Changed
 
 - Updated default max jobs from 1 to 2
-- 
+- Updated resource limits in docker-compose.yaml
 
 ## [0.8.3] - 2025-07-11
 
