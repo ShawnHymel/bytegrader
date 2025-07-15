@@ -11,8 +11,7 @@ When making changes, add an entry to the **Unreleased** section.
 
 ### Changed
 
-- Updated default max jobs from 1 to 2
-- Updated resource limits in docker-compose.yaml
+- Updated resource limits in docker-compose.yaml (optimized for 2 vCPU, 2 GB RAM)
 
 ## [0.8.3] - 2025-07-11
 
