@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 When making changes, add an entry to the **Unreleased** section.
 
+## Unreleased
+
+### Changed
+
+- Updated resource limits in docker-compose.yaml (optimized for 2 vCPU, 2 GB RAM)
+
 ## [0.8.3] - 2025-07-11
 
 ### Changed
