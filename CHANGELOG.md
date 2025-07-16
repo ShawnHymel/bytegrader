@@ -12,6 +12,7 @@ When making changes, add an entry to the **Unreleased** section.
 ### Changed
 
 - Updated resource limits in docker-compose.yaml (optimized for 2 vCPU, 2 GB RAM)
+- Environment variables defined in registry.yaml can now be passed in to images
 
 ## [0.8.3] - 2025-07-11
 

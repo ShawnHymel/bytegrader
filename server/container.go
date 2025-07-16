@@ -49,10 +49,7 @@ func (q *JobQueue) runContainerGrader(job *Job, tempDir string) *JobResult {
         &container.Config{
             Image: assignmentConfig.Image,
             WorkingDir: "/workspace",  // Simplified working directory
-            Env: []string{
-                "BYTEGRADER_VOLUME_MODE=true",
-                fmt.Sprintf("BYTEGRADER_JOB_ID=%s", job.ID),  // Pass job ID as env var
-            },
+            Env: buildEnvironmentVariables(job.ID, assignmentConfig),
             User: fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid()),
         },
         &container.HostConfig{
@@ -211,4 +208,19 @@ func (q *JobQueue) readResultsFromSharedVolume(jobWorkspace string) *JobResult {
     
     fmt.Printf("✅ Container grading complete: Score %.1f\n", result.Score)
     return &result
+}
+
+// Create the environment variable slice for containers
+func buildEnvironmentVariables(jobID string, config *AssignmentConfig) []string {
+    env := []string{
+        "BYTEGRADER_VOLUME_MODE=true",
+        fmt.Sprintf("BYTEGRADER_JOB_ID=%s", jobID),
+    }
+    
+    // Add assignment-specific environment variables
+    for key, value := range config.Environment {
+        env = append(env, fmt.Sprintf("%s=%s", key, value))
+    }
+    
+    return env
 }
