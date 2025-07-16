@@ -62,10 +62,24 @@ def determine_paths():
 def find_grader_module():
     """Find the instructor's grader.py in /assignment directory"""
 
-    # Locate the assignments's grader.py file
-    grader_file = Path('/assignment/grader.py')
-    if not grader_file.exists():
-        raise FileNotFoundError("No grader.py found in /assignment directory")
+    # Check if we have an assignment-specific grader
+    grader_assignment = os.getenv("GRADER_ASSIGNMENT")
+
+    # If assignment-specific grader is set, look for it
+    if grader_assignment:
+        grader_file = Path(f'/assignment/{grader_assignment}/grader.py')
+        if grader_file.exists():
+            print(f"Loading assignment-specific grading module: {grader_file}", file=sys.stderr)
+        else:
+            # Fallback to assignment directory root
+            grader_file = Path('/assignment/grader.py')
+            if not grader_file.exists():
+                raise FileNotFoundError(f"No grader.py found for assignment '{grader_assignment}' in /assignment/{grader_assignment}/ or /assignment/")
+    else:
+        # Look for grader.py in assignment root
+        grader_file = Path('/assignment/grader.py')
+        if not grader_file.exists():
+            raise FileNotFoundError("No grader.py found in /assignment directory")
     
     print(f"Loading grading module: {grader_file}", file=sys.stderr)
     
