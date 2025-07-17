@@ -23,7 +23,10 @@ func (q *JobQueue) runContainerGrader(job *Job, tempDir string) *JobResult {
         return &JobResult{Error: fmt.Sprintf("Assignment configuration error: %v", err)}
     }
     
-    fmt.Printf("🐳 Starting container grading with image: %s\n", assignmentConfig.Image)
+    fmt.Printf("🐳 Starting container grading for assignment '%s' with image: %s\n", 
+        job.AssignmentID, 
+        assignmentConfig.Image
+    )
     
     // Create job-specific directory in shared volume
     jobWorkspace := fmt.Sprintf("/workspace/jobs/%s", job.ID)
@@ -85,7 +88,17 @@ func (q *JobQueue) runContainerGrader(job *Job, tempDir string) *JobResult {
     
     // Log the container ID
     containerID := resp.ID
-    fmt.Printf("🚀 Launching grading container %s for job %s...\n", containerID[:12], job.ID)
+    fmt.Printf("🚀 Launching grading container %s for job %s (assignment: %s, image: %s)...\n", 
+        containerID[:12], job.ID, job.AssignmentID, assignmentConfig.Image)
+
+    // Log GRADER_ASSIGNMENT environment variables (if passed in)
+    env := buildEnvironmentVariables(job.ID, assignmentConfig)
+    for _, envVar := range env {
+        if strings.HasPrefix(envVar, "GRADER_ASSIGNMENT=") {
+            fmt.Printf("📋 Environment: %s\n", envVar)
+            break
+        }
+    }
     
     // Start the container
     if err := cli.ContainerStart(ctx, containerID, container.StartOptions{}); err != nil {
