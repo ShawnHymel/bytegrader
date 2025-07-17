@@ -2,7 +2,7 @@
 """
 ByteGrader Universal Entrypoint
 Loads and executes instructor grading scripts. Calls the `grade_submission` function
-defined in the instructor's `grader.py` file located in the `/assignment` directory.
+defined in the instructor's `grader.py` file located in the `/assignments` directory.
 """
 
 import sys
@@ -67,20 +67,20 @@ def find_grader_module():
 
     # If assignment-specific grader is set, look for it
     if grader_assignment:
-        grader_file = Path(f'/assignment/{grader_assignment}/grader.py')
+        grader_file = Path(f'/assignments/{grader_assignment}/grader.py')
         if grader_file.exists():
             print(f"Loading assignment-specific grading module: {grader_file}", file=sys.stderr)
         else:
             # Fallback to assignment directory root
-            grader_file = Path('/assignment/grader.py')
+            grader_file = Path('/assignments/grader.py')
             if not grader_file.exists():
-                raise FileNotFoundError(f"No grader.py found for assignment '{grader_assignment}' in /assignment/{grader_assignment}/ or /assignment/")
+                raise FileNotFoundError(f"No grader.py found for assignment '{grader_assignment}' in /assignments/{grader_assignment}/ or /assignments/")
     else:
         # Look for grader.py in assignment root
-        grader_file = Path('/assignment/grader.py')
+        grader_file = Path('/assignments/grader.py')
         if not grader_file.exists():
-            raise FileNotFoundError("No grader.py found in /assignment directory")
-    
+            raise FileNotFoundError("No grader.py found in /assignments directory")
+
     print(f"Loading grading module: {grader_file}", file=sys.stderr)
     
     # Dynamically import the module
