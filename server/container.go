@@ -7,6 +7,7 @@ import (
     "io"
     "os"
     "path/filepath"
+    "strings"
     "time"
 
     "github.com/docker/docker/api/types/container"
@@ -23,7 +24,10 @@ func (q *JobQueue) runContainerGrader(job *Job, tempDir string) *JobResult {
         return &JobResult{Error: fmt.Sprintf("Assignment configuration error: %v", err)}
     }
     
-    fmt.Printf("🐳 Starting container grading with image: %s\n", assignmentConfig.Image)
+    fmt.Printf("🐳 Starting container grading for assignment '%s' with image: %s\n", 
+        job.AssignmentID, 
+        assignmentConfig.Image,
+    )
     
     // Create job-specific directory in shared volume
     jobWorkspace := fmt.Sprintf("/workspace/jobs/%s", job.ID)
@@ -49,10 +53,7 @@ func (q *JobQueue) runContainerGrader(job *Job, tempDir string) *JobResult {
         &container.Config{
             Image: assignmentConfig.Image,
             WorkingDir: "/workspace",  // Simplified working directory
-            Env: []string{
-                "BYTEGRADER_VOLUME_MODE=true",
-                fmt.Sprintf("BYTEGRADER_JOB_ID=%s", job.ID),  // Pass job ID as env var
-            },
+            Env: buildEnvironmentVariables(job.ID, assignmentConfig),
             User: fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid()),
         },
         &container.HostConfig{
@@ -88,7 +89,17 @@ func (q *JobQueue) runContainerGrader(job *Job, tempDir string) *JobResult {
     
     // Log the container ID
     containerID := resp.ID
-    fmt.Printf("🚀 Launching grading container %s for job %s...\n", containerID[:12], job.ID)
+    fmt.Printf("🚀 Launching grading container %s for job %s (assignment: %s, image: %s)...\n", 
+        containerID[:12], job.ID, job.AssignmentID, assignmentConfig.Image)
+
+    // Log GRADER_ASSIGNMENT environment variables (if passed in)
+    env := buildEnvironmentVariables(job.ID, assignmentConfig)
+    for _, envVar := range env {
+        if strings.HasPrefix(envVar, "GRADER_ASSIGNMENT=") {
+            fmt.Printf("📋 Environment: %s\n", envVar)
+            break
+        }
+    }
     
     // Start the container
     if err := cli.ContainerStart(ctx, containerID, container.StartOptions{}); err != nil {
@@ -211,4 +222,19 @@ func (q *JobQueue) readResultsFromSharedVolume(jobWorkspace string) *JobResult {
     
     fmt.Printf("✅ Container grading complete: Score %.1f\n", result.Score)
     return &result
+}
+
+// Create the environment variable slice for containers
+func buildEnvironmentVariables(jobID string, config *AssignmentConfig) []string {
+    env := []string{
+        "BYTEGRADER_VOLUME_MODE=true",
+        fmt.Sprintf("BYTEGRADER_JOB_ID=%s", jobID),
+    }
+    
+    // Add assignment-specific environment variables
+    for key, value := range config.Environment {
+        env = append(env, fmt.Sprintf("%s=%s", key, value))
+    }
+    
+    return env
 }

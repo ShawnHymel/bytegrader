@@ -14,6 +14,7 @@ type AssignmentConfig struct {
     Description     string `yaml:"description"`
     TimeoutMinutes  int    `yaml:"timeout_minutes"`
     Enabled         bool   `yaml:"enabled"`
+    Environment     map[string]string `yaml:"environment,omitempty"`
     Resources       ResourceConfig `yaml:"resources,omitempty"`
 }
 
