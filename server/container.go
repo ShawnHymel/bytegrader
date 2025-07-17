@@ -25,7 +25,7 @@ func (q *JobQueue) runContainerGrader(job *Job, tempDir string) *JobResult {
     
     fmt.Printf("🐳 Starting container grading for assignment '%s' with image: %s\n", 
         job.AssignmentID, 
-        assignmentConfig.Image
+        assignmentConfig.Image,
     )
     
     // Create job-specific directory in shared volume
