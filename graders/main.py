@@ -67,20 +67,18 @@ def find_grader_module():
 
     # If assignment-specific grader is set, look for it
     if grader_assignment:
+        # New multi-assignment structure: look for specific assignment grader
         grader_file = Path(f'/assignments/{grader_assignment}/grader.py')
-        if grader_file.exists():
-            print(f"Loading assignment-specific grading module: {grader_file}", file=sys.stderr)
-        else:
-            # Fallback to assignment directory root
+        if not grader_file.exists():
+            raise FileNotFoundError(f"No grader.py found for assignment '{grader_assignment}' in /assignments/{grader_assignment}/")
+    else:
+        # Old single-assignment structure: look in either location
+        grader_file = Path('/assignment/grader.py')
+        if not grader_file.exists():
             grader_file = Path('/assignments/grader.py')
             if not grader_file.exists():
-                raise FileNotFoundError(f"No grader.py found for assignment '{grader_assignment}' in /assignments/{grader_assignment}/ or /assignments/")
-    else:
-        # Look for grader.py in assignment root
-        grader_file = Path('/assignments/grader.py')
-        if not grader_file.exists():
-            raise FileNotFoundError("No grader.py found in /assignments directory")
-
+                raise FileNotFoundError("No grader.py found in /assignment/ or /assignments/ directory")
+    
     print(f"Loading grading module: {grader_file}", file=sys.stderr)
     
     # Dynamically import the module
