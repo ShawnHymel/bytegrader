@@ -1,0 +1,605 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ByteGrader — Internal Test Tool</title>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --border: #2e3147;
+      --accent: #4f8ef7;
+      --green: #3ddc84;
+      --red: #ff5252;
+      --yellow: #ffd740;
+      --text: #e0e3f0;
+      --muted: #6b7280;
+      --mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      min-height: 100vh;
+      padding: 24px;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 28px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    header h1 {
+      font-size: 1.1rem;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+
+    header .badge {
+      background: #2a2d3e;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 0.7rem;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-family: var(--mono);
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      gap: 20px;
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    @media (max-width: 800px) {
+      .layout { grid-template-columns: 1fr; }
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+
+    .card-title {
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      padding: 14px 16px 10px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .card-body { padding: 16px; }
+
+    label {
+      display: block;
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin-bottom: 5px;
+      margin-top: 14px;
+    }
+    label:first-child { margin-top: 0; }
+
+    input[type="text"], input[type="url"], select {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 0.875rem;
+      font-family: var(--mono);
+      padding: 8px 10px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    input:focus, select:focus { border-color: var(--accent); }
+
+    .file-drop {
+      border: 1.5px dashed var(--border);
+      border-radius: 8px;
+      padding: 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+      font-size: 0.85rem;
+      color: var(--muted);
+    }
+    .file-drop:hover, .file-drop.drag-over {
+      border-color: var(--accent);
+      background: rgba(79,142,247,0.04);
+      color: var(--accent);
+    }
+    .file-drop.has-file {
+      border-color: var(--green);
+      color: var(--green);
+    }
+    .file-drop input { display: none; }
+
+    .btn {
+      display: block;
+      width: 100%;
+      margin-top: 16px;
+      padding: 10px;
+      border-radius: 7px;
+      border: none;
+      font-size: 0.875rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.15s, transform 0.1s;
+    }
+    .btn:active { transform: scale(0.98); }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-secondary { background: var(--border); color: var(--text); margin-top: 8px; }
+
+    /* Status panel */
+    .status-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 16px;
+      font-size: 0.8rem;
+      border-bottom: 1px solid var(--border);
+      min-height: 40px;
+    }
+
+    .dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .dot-idle    { background: var(--muted); }
+    .dot-running { background: var(--yellow); animation: pulse 1s infinite; }
+    .dot-ok      { background: var(--green); }
+    .dot-err     { background: var(--red); }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    .log-area {
+      font-family: var(--mono);
+      font-size: 0.8rem;
+      line-height: 1.6;
+      padding: 14px 16px;
+      white-space: pre-wrap;
+      word-break: break-all;
+      min-height: 420px;
+      max-height: 65vh;
+      overflow-y: auto;
+      color: #9ca3af;
+    }
+
+    .log-area:empty::before {
+      content: 'Output will appear here after submission...';
+      color: var(--muted);
+      font-style: italic;
+    }
+
+    .log-area .log-info  { color: #9ca3af; }
+    .log-area .log-ok    { color: var(--green); }
+    .log-area .log-err   { color: var(--red); }
+    .log-area .log-warn  { color: var(--yellow); }
+    .log-area .log-key   { color: var(--accent); }
+    .log-area .log-val   { color: #c4b5fd; }
+
+    .result-box {
+      margin: 12px 16px;
+      padding: 14px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-family: var(--mono);
+      font-size: 0.8rem;
+    }
+    .result-box.pass { border-color: var(--green); }
+    .result-box.fail { border-color: var(--red); }
+
+    .grade-badge {
+      display: inline-block;
+      font-size: 1.4rem;
+      font-weight: 700;
+      font-family: var(--mono);
+      letter-spacing: -0.02em;
+    }
+    .grade-badge.pass { color: var(--green); }
+    .grade-badge.fail { color: var(--red); }
+
+    .meta-row {
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+      margin-top: 8px;
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+    .meta-row span { font-family: var(--mono); color: var(--text); }
+  </style>
+</head>
+<body>
+
+<header>
+  <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+    <rect width="28" height="28" rx="6" fill="#4f8ef7" opacity="0.15"/>
+    <path d="M7 14l5 5 9-9" stroke="#4f8ef7" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+  <h1>ByteGrader</h1>
+  <span class="badge">Internal Test Tool</span>
+</header>
+
+<div class="layout">
+
+  <!-- ── Left: Config panel ── -->
+  <div>
+    <div class="card">
+      <div class="card-title">Submission Config</div>
+      <div class="card-body">
+
+        <label for="serverUrl">Server URL</label>
+        <input type="url" id="serverUrl" placeholder="https://esp32-iot.bytegrader.com" />
+
+        <label for="apiKey">API Key</label>
+        <input type="text" id="apiKey" placeholder="leave blank if not required" />
+
+        <label for="username">Username</label>
+        <input type="text" id="username" value="test-user" />
+
+        <label for="assignment">Assignment</label>
+        <input type="text" id="assignment" value="make-c-add" placeholder="assignment name" />
+
+        <label style="margin-top:16px">ZIP File</label>
+        <div class="file-drop" id="dropZone">
+          <input type="file" id="fileInput" accept=".zip" />
+          <div id="dropLabel">
+            📦 Drop ZIP here or <u>click to browse</u>
+          </div>
+        </div>
+
+        <button class="btn btn-primary" id="submitBtn" disabled>
+          Submit for Grading
+        </button>
+        <button class="btn btn-secondary" id="clearBtn">
+          Clear Output
+        </button>
+
+      </div>
+    </div>
+
+    <!-- Quick-links -->
+    <div class="card" style="margin-top:16px">
+      <div class="card-title">Quick Checks</div>
+      <div class="card-body" style="display:flex;flex-direction:column;gap:8px">
+        <button class="btn btn-secondary" id="healthBtn">🏥 /health</button>
+        <button class="btn btn-secondary" id="queueBtn">📋 /queue</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Right: Output panel ── -->
+  <div class="card" style="display:flex;flex-direction:column">
+    <div class="status-bar">
+      <div class="dot dot-idle" id="statusDot"></div>
+      <span id="statusText">Idle</span>
+    </div>
+
+    <div id="resultBox" style="display:none"></div>
+    <div class="log-area" id="logArea"></div>
+  </div>
+
+</div>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────────
+let selectedFile = null;
+let pollTimer = null;
+
+// ── DOM refs ───────────────────────────────────────────────────────────────
+const serverUrl  = document.getElementById('serverUrl');
+const apiKey     = document.getElementById('apiKey');
+const username   = document.getElementById('username');
+const assignment = document.getElementById('assignment');
+const fileInput  = document.getElementById('fileInput');
+const dropZone   = document.getElementById('dropZone');
+const dropLabel  = document.getElementById('dropLabel');
+const submitBtn  = document.getElementById('submitBtn');
+const clearBtn   = document.getElementById('clearBtn');
+const healthBtn  = document.getElementById('healthBtn');
+const queueBtn   = document.getElementById('queueBtn');
+const logArea    = document.getElementById('logArea');
+const statusDot  = document.getElementById('statusDot');
+const statusText = document.getElementById('statusText');
+const resultBox  = document.getElementById('resultBox');
+
+// ── Persist config in localStorage ────────────────────────────────────────
+function loadPrefs() {
+  serverUrl.value  = localStorage.getItem('bg_url')  || '';
+  apiKey.value     = localStorage.getItem('bg_key')  || '';
+  username.value   = localStorage.getItem('bg_user') || 'test-user';
+  assignment.value = localStorage.getItem('bg_asgn') || 'make-c-add';
+}
+function savePrefs() {
+  localStorage.setItem('bg_url',  serverUrl.value);
+  localStorage.setItem('bg_key',  apiKey.value);
+  localStorage.setItem('bg_user', username.value);
+  localStorage.setItem('bg_asgn', assignment.value);
+}
+[serverUrl, apiKey, username, assignment].forEach(el =>
+  el.addEventListener('input', savePrefs)
+);
+loadPrefs();
+
+// ── File handling ──────────────────────────────────────────────────────────
+dropZone.addEventListener('click', () => fileInput.click());
+fileInput.addEventListener('change', () => setFile(fileInput.files[0]));
+
+dropZone.addEventListener('dragover', e => {
+  e.preventDefault();
+  dropZone.classList.add('drag-over');
+});
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('drag-over');
+  const f = e.dataTransfer.files[0];
+  if (f) setFile(f);
+});
+
+function setFile(f) {
+  if (!f || !f.name.endsWith('.zip')) {
+    setStatus('error', 'Please select a .zip file');
+    return;
+  }
+  selectedFile = f;
+  dropZone.classList.add('has-file');
+  dropLabel.textContent = `📦 ${f.name} (${formatBytes(f.size)})`;
+  submitBtn.disabled = false;
+}
+
+function formatBytes(b) {
+  if (b < 1024) return b + ' B';
+  if (b < 1024*1024) return (b/1024).toFixed(1) + ' KB';
+  return (b/1024/1024).toFixed(2) + ' MB';
+}
+
+// ── Log helpers ────────────────────────────────────────────────────────────
+function log(msg, cls = 'log-info') {
+  const line = document.createElement('div');
+  line.className = cls;
+  line.textContent = msg;
+  logArea.appendChild(line);
+  logArea.scrollTop = logArea.scrollHeight;
+}
+
+function logJson(obj, cls = 'log-info') {
+  try {
+    const lines = JSON.stringify(obj, null, 2).split('\n');
+    lines.forEach(l => {
+      const m = l.match(/^(\s*)("[\w_]+")(\s*:\s*)(.+)$/);
+      if (m) {
+        const el = document.createElement('div');
+        el.className = cls;
+        el.innerHTML =
+          m[1] +
+          `<span class="log-key">${m[2]}</span>` +
+          m[3] +
+          `<span class="log-val">${m[4]}</span>`;
+        logArea.appendChild(el);
+      } else {
+        log(l, cls);
+      }
+    });
+  } catch {
+    log(String(obj), cls);
+  }
+  logArea.scrollTop = logArea.scrollHeight;
+}
+
+function clearLog() {
+  logArea.innerHTML = '';
+  resultBox.style.display = 'none';
+}
+
+function setStatus(state, msg) {
+  statusText.textContent = msg;
+  statusDot.className = 'dot';
+  if (state === 'running') statusDot.classList.add('dot-running');
+  else if (state === 'ok')  statusDot.classList.add('dot-ok');
+  else if (state === 'error') statusDot.classList.add('dot-err');
+  else statusDot.classList.add('dot-idle');
+}
+
+// ── API helpers ────────────────────────────────────────────────────────────
+function baseUrl() {
+  return (serverUrl.value || '').replace(/\/$/, '');
+}
+
+function headers() {
+  const h = {};
+  if (username.value) h['X-Username'] = username.value;
+  if (apiKey.value)   h['X-API-Key']  = apiKey.value;
+  return h;
+}
+
+async function apiFetch(path, opts = {}) {
+  const res = await fetch(baseUrl() + path, {
+    headers: { ...headers(), ...opts.headers },
+    ...opts
+  });
+  const text = await res.text();
+  let json;
+  try { json = JSON.parse(text); } catch { json = { raw: text }; }
+  return { ok: res.ok, status: res.status, json };
+}
+
+// ── Submit ─────────────────────────────────────────────────────────────────
+submitBtn.addEventListener('click', async () => {
+  if (!selectedFile) return;
+  if (!baseUrl()) { setStatus('error', 'Set Server URL first'); return; }
+
+  submitBtn.disabled = true;
+  clearLog();
+  setStatus('running', 'Submitting...');
+
+  log(`▶  POST ${baseUrl()}/submit?assignment=${assignment.value}`);
+  log(`   file: ${selectedFile.name} (${formatBytes(selectedFile.size)})`);
+  log('');
+
+  const fd = new FormData();
+  fd.append('file', selectedFile, selectedFile.name);
+
+  let res;
+  try {
+    res = await fetch(
+      `${baseUrl()}/submit?assignment=${encodeURIComponent(assignment.value)}`,
+      { method: 'POST', headers: headers(), body: fd }
+    );
+  } catch (e) {
+    setStatus('error', 'Network error');
+    log('Network error: ' + e.message, 'log-err');
+    submitBtn.disabled = false;
+    return;
+  }
+
+  const text = await res.text();
+  let json;
+  try { json = JSON.parse(text); } catch { json = { raw: text }; }
+
+  log(`◀  HTTP ${res.status}`, res.ok ? 'log-ok' : 'log-err');
+  logJson(json, res.ok ? 'log-ok' : 'log-err');
+
+  if (!res.ok || !json.job_id) {
+    setStatus('error', `Submission failed (HTTP ${res.status})`);
+    submitBtn.disabled = false;
+    return;
+  }
+
+  const jobId = json.job_id;
+  log('');
+  log(`⏳ Polling job: ${jobId}`, 'log-info');
+  pollStatus(jobId);
+});
+
+// ── Poll /status ───────────────────────────────────────────────────────────
+async function pollStatus(jobId) {
+  setStatus('running', `Grading job ${jobId.slice(0, 8)}…`);
+
+  const maxPolls = 120;
+  let polls = 0;
+
+  async function poll() {
+    if (polls++ >= maxPolls) {
+      setStatus('error', 'Timed out after 2 minutes');
+      log('Polling timed out.', 'log-err');
+      submitBtn.disabled = false;
+      return;
+    }
+
+    let res;
+    try {
+      res = await apiFetch(`/status/${jobId}`);
+    } catch (e) {
+      log('Poll error: ' + e.message, 'log-warn');
+      pollTimer = setTimeout(poll, 3000);
+      return;
+    }
+
+    const s = res.json?.job?.status ?? res.json?.status;
+
+    if (s === 'pending' || s === 'queued' || s === 'processing' || s === 'running') {
+      setStatus('running', `Status: ${s}…`);
+      pollTimer = setTimeout(poll, 3000);
+      return;
+    }
+
+    // Terminal state
+    log('');
+    log(`━━━ Result ━━━`, 'log-info');
+    logJson(res.json);
+
+    showResult(res.json);
+
+    if (s === 'completed') {
+      setStatus('ok', 'Grading complete');
+    } else {
+      setStatus('error', `Job ended with status: ${s}`);
+    }
+    submitBtn.disabled = false;
+  }
+
+  poll();
+}
+
+function showResult(data) {
+  resultBox.style.display = 'block';
+  const job     = data.job ?? data;
+  const jobId = (job.id || data.job_id || '').slice(0, 12);
+  const result  = job.result ?? {};
+  const score   = result.score ?? job.score ?? '—';
+  const maxScore = result.max_score ?? job.max_score ?? 100;
+  const passed  = result.passed ?? job.passed ?? (score !== '—' && parseFloat(score) >= parseFloat(maxScore));
+  const cls     = passed ? 'pass' : 'fail';
+
+  resultBox.className = `result-box ${cls}`;
+  resultBox.innerHTML = `
+    <div class="grade-badge ${cls}">${score} / ${maxScore}</div>
+    <div class="meta-row">
+      <div>Job <span>${(job.id || '').slice(0, 12)}…</span></div>
+      <div>Status <span>${job.status || '—'}</span></div>
+      ${data.duration_ms ? `<div>Duration <span>${data.duration_ms}ms</span></div>` : ''}
+    </div>
+    ${result.feedback ? `<div style="margin-top:10px;font-size:0.8rem;color:#9ca3af">${result.feedback}</div>` : ''}
+  `;
+}
+
+// ── Quick checks ───────────────────────────────────────────────────────────
+healthBtn.addEventListener('click', async () => {
+  if (!baseUrl()) { setStatus('error', 'Set Server URL first'); return; }
+  clearLog();
+  setStatus('running', 'Checking health…');
+  log(`▶  GET ${baseUrl()}/health`);
+  try {
+    const r = await apiFetch('/health');
+    log(`◀  HTTP ${r.status}`, r.ok ? 'log-ok' : 'log-err');
+    logJson(r.json);
+    setStatus(r.ok ? 'ok' : 'error', r.ok ? 'Healthy' : 'Unhealthy');
+  } catch(e) {
+    log('Error: ' + e.message, 'log-err');
+    setStatus('error', 'Network error');
+  }
+});
+
+queueBtn.addEventListener('click', async () => {
+  if (!baseUrl()) { setStatus('error', 'Set Server URL first'); return; }
+  clearLog();
+  setStatus('running', 'Fetching queue…');
+  log(`▶  GET ${baseUrl()}/queue`);
+  try {
+    const r = await apiFetch('/queue');
+    log(`◀  HTTP ${r.status}`, r.ok ? 'log-ok' : 'log-err');
+    logJson(r.json);
+    setStatus(r.ok ? 'ok' : 'error', `Queue fetched`);
+  } catch(e) {
+    log('Error: ' + e.message, 'log-err');
+    setStatus('error', 'Network error');
+  }
+});
+
+clearBtn.addEventListener('click', clearLog);
+</script>
+
+</body>
+</html>

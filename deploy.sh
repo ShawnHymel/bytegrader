@@ -1,0 +1,404 @@
+#!/usr/bin/env bash
+# =============================================================================
+# ByteGrader Unified Deployment Script
+# =============================================================================
+# Replaces setup-server.sh, deploy/deploy.sh, and setup-ssl.sh.
+# Reads all configuration from config.yaml — no interactive prompts.
+#
+# Usage:
+#   sudo bash deploy.sh [--skip-ssl] [--skip-build]
+#
+# Options:
+#   --skip-ssl      Skip SSL certificate generation (useful for local testing)
+#   --skip-build    Skip Docker image builds (use existing images)
+# =============================================================================
+
+set -euo pipefail
+
+RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
+BLUE='\033[0;34m'; BOLD='\033[1m'; NC='\033[0m'
+info()    { echo -e "${BLUE}ℹ${NC}  $*"; }
+success() { echo -e "${GREEN}✅${NC} $*"; }
+warn()    { echo -e "${YELLOW}⚠${NC}  $*"; }
+die()     { echo -e "${RED}❌ ERROR:${NC} $*" >&2; exit 1; }
+header()  { echo -e "\n${BOLD}━━━ $* ━━━${NC}"; }
+
+# ── Args ──────────────────────────────────────────────────────────────────────
+SKIP_SSL=false
+SKIP_BUILD=false
+for arg in "$@"; do
+  case $arg in
+    --skip-ssl)   SKIP_SSL=true ;;
+    --skip-build) SKIP_BUILD=true ;;
+    *) die "Unknown argument: $arg" ;;
+  esac
+done
+
+[[ $EUID -ne 0 ]] && die "Run as root: sudo bash deploy.sh"
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CONFIG="$SCRIPT_DIR/config.yaml"
+[[ -f "$CONFIG" ]] || die "config.yaml not found at $SCRIPT_DIR"
+
+# ── Step 1: Dependencies ──────────────────────────────────────────────────────
+header "Step 1 — Installing Dependencies"
+
+apt-get update -qq
+apt-get install -y -qq \
+  ca-certificates curl wget git vim htop ufw \
+  nginx certbot python3-certbot-nginx python3-yaml \
+  > /dev/null 2>&1
+success "System packages ready"
+
+if ! command -v docker &>/dev/null; then
+  info "Installing Docker..."
+  install -m 0755 -d /etc/apt/keyrings
+  curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
+    -o /etc/apt/keyrings/docker.asc 2>/dev/null
+  chmod a+r /etc/apt/keyrings/docker.asc
+  echo \
+    "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] \
+     https://download.docker.com/linux/ubuntu \
+     $(. /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}") stable" \
+    | tee /etc/apt/sources.list.d/docker.list > /dev/null
+  apt-get update -qq
+  apt-get install -y -qq \
+    docker-ce docker-ce-cli containerd.io \
+    docker-buildx-plugin docker-compose-plugin \
+    > /dev/null 2>&1
+  success "Docker installed"
+else
+  success "Docker already installed"
+fi
+
+# ── Step 2: Read config ───────────────────────────────────────────────────────
+header "Step 2 — Reading Configuration"
+
+cfg() {
+  python3 - "$1" <<'PYEOF'
+import sys, yaml, os
+os.chdir(os.path.dirname(os.path.abspath("config.yaml")))
+key = sys.argv[1]
+with open("config.yaml") as f:
+    d = yaml.safe_load(f)
+val = d.get(key, "")
+if isinstance(val, list):
+    print("\n".join(str(v) for v in val if v))
+elif val is None:
+    print("")
+else:
+    print(str(val))
+PYEOF
+}
+
+cd "$SCRIPT_DIR"
+
+DOMAIN=$(cfg "domain");           [[ -z "$DOMAIN" ]]      && die "domain is required in config.yaml"
+SUBDOMAIN=$(cfg "subdomain");     [[ -z "$SUBDOMAIN" ]]   && die "subdomain is required in config.yaml"
+SSL_EMAIL=$(cfg "ssl_email");     [[ -z "$SSL_EMAIL" ]]   && die "ssl_email is required in config.yaml"
+[[ "$SSL_EMAIL" == "you@example.com" ]] && die "Please set a real ssl_email in config.yaml"
+
+FULL_DOMAIN="${SUBDOMAIN}.${DOMAIN}"
+APP_DIR=$(cfg "app_dir");         APP_DIR="${APP_DIR:-/home/bytegrader/app}"
+BG_USER=$(cfg "bytegrader_user"); BG_USER="${BG_USER:-bytegrader}"
+APP_PORT=$(cfg "app_port");       APP_PORT="${APP_PORT:-8080}"
+
+mapfile -t API_KEY_ARRAY < <(cfg "api_keys")
+API_KEYS_CSV=$(IFS=,; echo "${API_KEY_ARRAY[*]:-}")
+PRIMARY_API_KEY="${API_KEY_ARRAY[0]:-}"
+
+mapfile -t IP_WHITELIST < <(cfg "ip_whitelist")
+
+info "Domain:       $FULL_DOMAIN"
+info "App dir:      $APP_DIR"
+info "User:         $BG_USER"
+info "API keys:     ${#API_KEY_ARRAY[@]} configured"
+info "IP whitelist: ${#IP_WHITELIST[@]} entries (0 = open)"
+
+# ── Step 3: System user ───────────────────────────────────────────────────────
+header "Step 3 — System User"
+
+if ! id "$BG_USER" &>/dev/null; then
+  adduser --disabled-password --gecos "" "$BG_USER"
+  success "Created user: $BG_USER"
+else
+  success "User $BG_USER already exists"
+fi
+usermod -aG docker "$BG_USER"
+
+if [[ -f /root/.ssh/authorized_keys ]]; then
+  mkdir -p "/home/$BG_USER/.ssh"
+  cp /root/.ssh/authorized_keys "/home/$BG_USER/.ssh/"
+  chown -R "$BG_USER:$BG_USER" "/home/$BG_USER/.ssh"
+  chmod 700 "/home/$BG_USER/.ssh"
+  chmod 600 "/home/$BG_USER/.ssh/authorized_keys"
+fi
+
+# ── Step 4: Environment file ──────────────────────────────────────────────────
+header "Step 4 — Environment File"
+
+ENV_FILE="/home/$BG_USER/.bytegrader_env"
+cat > "$ENV_FILE" <<EOF
+# Generated by deploy.sh — edit config.yaml and re-run to update
+BYTEGRADER_DOMAIN=${DOMAIN}
+BYTEGRADER_SUBDOMAIN=${SUBDOMAIN}
+BYTEGRADER_FULL_DOMAIN=${FULL_DOMAIN}
+BYTEGRADER_SSL_EMAIL=${SSL_EMAIL}
+BYTEGRADER_API_KEYS=${API_KEYS_CSV}
+BYTEGRADER_APP_PORT=${APP_PORT}
+BYTEGRADER_APP_DIR=${APP_DIR}
+BYTEGRADER_USER=${BG_USER}
+BYTEGRADER_REQUIRE_API_KEY=$([[ -n "$API_KEYS_CSV" ]] && echo "true" || echo "false")
+BYTEGRADER_VALID_API_KEYS=${API_KEYS_CSV}
+EOF
+chown "$BG_USER:$BG_USER" "$ENV_FILE"
+chmod 600 "$ENV_FILE"
+success "Environment file written"
+
+# ── Step 5: Deploy app ────────────────────────────────────────────────────────
+header "Step 5 — Deploying Application"
+
+mkdir -p "$APP_DIR"
+chown "$BG_USER:$BG_USER" "$APP_DIR"
+
+if [[ "$SKIP_BUILD" == false ]]; then
+  info "Building and deploying containers..."
+  sudo -u "$BG_USER" bash "$SCRIPT_DIR/deploy/deploy.sh" "$APP_DIR"
+
+  # Patch docker-compose.yaml for Blue/Green support
+  COMPOSE_FILE="$APP_DIR/docker-compose.yaml"
+  if [[ -f "$COMPOSE_FILE" ]]; then
+    # Allow port to be overridden via APP_PORT env var
+    sed -i 's|"127.0.0.1:8080:8080"|"127.0.0.1:${APP_PORT:-8080}:8080"|g' "$COMPOSE_FILE"
+    # Allow container name to be overridden via CONTAINER_NAME env var
+    sed -i 's|container_name: bytegrader-.*|container_name: ${CONTAINER_NAME:-bytegrader-app}|g' "$COMPOSE_FILE"
+    success "Patched docker-compose.yaml for Blue/Green support"
+  fi
+else
+  warn "--skip-build: bringing up existing containers"
+  cd "$APP_DIR" && sudo -u "$BG_USER" docker compose up -d 2>/dev/null || true
+fi
+
+# Wait for healthy
+info "Waiting for service..."
+for i in $(seq 1 30); do
+  if curl -sf "http://localhost:${APP_PORT}/health" &>/dev/null; then
+    success "App is healthy"
+    break
+  fi
+  sleep 2
+  [[ $i -eq 30 ]] && die "App did not become healthy. Check: cd $APP_DIR && docker compose logs"
+done
+
+# ── Step 6: nginx ─────────────────────────────────────────────────────────────
+header "Step 6 — Configuring Nginx"
+
+# Build IP restriction block
+IP_BLOCK=""
+if [[ ${#IP_WHITELIST[@]} -gt 0 && -n "${IP_WHITELIST[0]}" ]]; then
+  for ip in "${IP_WHITELIST[@]}"; do
+    [[ -n "$ip" ]] && IP_BLOCK+="        allow ${ip};\n"
+  done
+  IP_BLOCK+="        deny all;\n"
+fi
+
+mkdir -p /var/www/html
+
+cat > /etc/nginx/sites-available/bytegrader <<NGINX
+# ByteGrader nginx config — generated by deploy.sh
+
+# Redirect root domain to GitHub
+server {
+    listen 80;
+    server_name ${DOMAIN} www.${DOMAIN};
+    location /.well-known/acme-challenge/ { root /var/www/html; }
+    location / { return 301 https://github.com/ShawnHymel/bytegrader; }
+}
+
+# Course API — HTTP to HTTPS redirect
+server {
+    listen 80;
+    server_name ${FULL_DOMAIN};
+    location /.well-known/acme-challenge/ { root /var/www/html; }
+    location / { return 301 https://\$server_name\$request_uri; }
+}
+
+# Course API — HTTPS
+server {
+    listen 443 ssl http2;
+    server_name ${FULL_DOMAIN};
+
+    ssl_certificate     /etc/letsencrypt/live/${FULL_DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${FULL_DOMAIN}/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+    add_header X-Frame-Options DENY;
+    add_header X-Content-Type-Options nosniff;
+    add_header Strict-Transport-Security "max-age=63072000; includeSubDomains; preload";
+
+    location / {
+$(printf '%b' "$IP_BLOCK")
+        # CORS — allow both localhost and 127.0.0.1 for local dev tools
+        proxy_hide_header Access-Control-Allow-Origin;
+        set \$cors_origin "";
+        if (\$http_origin ~* "^https?://(localhost|127\\.0\\.0\\.1)(:[0-9]+)?\$") {
+            set \$cors_origin \$http_origin;
+        }
+        add_header Access-Control-Allow-Origin \$cors_origin always;
+        add_header Access-Control-Allow-Headers "X-API-Key, X-Username, Content-Type" always;
+        add_header Access-Control-Allow-Methods "GET, POST, OPTIONS" always;
+
+        if (\$request_method = OPTIONS) { return 204; }
+
+        proxy_pass         http://localhost:${APP_PORT};
+        proxy_set_header   Host              \$host;
+        proxy_set_header   X-Real-IP         \$remote_addr;
+        proxy_set_header   X-Forwarded-For   \$proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto \$scheme;
+        proxy_read_timeout 300s;
+        proxy_connect_timeout 10s;
+        client_max_body_size 100M;
+    }
+}
+NGINX
+
+ln -sf /etc/nginx/sites-available/bytegrader /etc/nginx/sites-enabled/bytegrader
+rm -f /etc/nginx/sites-enabled/default
+
+# Test without SSL block if cert doesn't exist yet
+if [[ ! -f "/etc/letsencrypt/live/${FULL_DOMAIN}/fullchain.pem" ]]; then
+  # Write HTTP-only config for initial certbot run
+  cat > /etc/nginx/sites-available/bytegrader <<NGINX_HTTP
+# ByteGrader nginx config (HTTP only — run deploy.sh again after DNS propagates for SSL)
+
+server {
+    listen 80;
+    server_name ${DOMAIN} www.${DOMAIN};
+    location / { return 301 https://github.com/ShawnHymel/bytegrader; }
+}
+
+server {
+    listen 80;
+    server_name ${FULL_DOMAIN};
+    location /.well-known/acme-challenge/ { root /var/www/html; }
+    location / {
+        proxy_pass http://localhost:${APP_PORT};
+        proxy_set_header Host \$host;
+        proxy_read_timeout 300s;
+        client_max_body_size 100M;
+    }
+}
+NGINX_HTTP
+fi
+
+nginx -t && systemctl reload nginx
+success "Nginx configured"
+
+# ── Step 7: Firewall ──────────────────────────────────────────────────────────
+header "Step 7 — Firewall"
+
+ufw allow OpenSSH    > /dev/null 2>&1
+ufw allow 'Nginx Full' > /dev/null 2>&1
+ufw --force enable   > /dev/null 2>&1
+success "Firewall: SSH + HTTP/HTTPS open"
+
+# ── Step 8: SSL ───────────────────────────────────────────────────────────────
+if [[ "$SKIP_SSL" == false ]]; then
+  header "Step 8 — SSL Certificate"
+
+  SERVER_IP=$(curl -4 -sf https://ifconfig.me 2>/dev/null || true)
+  RESOLVED_IP=$(getent hosts "$FULL_DOMAIN" 2>/dev/null | awk '{print $1}' || true)
+
+  if [[ "$SERVER_IP" != "$RESOLVED_IP" ]]; then
+    warn "DNS not ready: server is $SERVER_IP but $FULL_DOMAIN resolves to ${RESOLVED_IP:-nothing}"
+    warn "Set your A record and re-run: sudo bash deploy.sh --skip-build"
+    SKIP_SSL=true
+  else
+    certbot certonly \
+      --nginx \
+      --non-interactive \
+      --agree-tos \
+      -m "$SSL_EMAIL" \
+      -d "$FULL_DOMAIN" || { warn "certbot failed — re-run after DNS propagates"; SKIP_SSL=true; }
+
+    if [[ "$SKIP_SSL" == false ]]; then
+      # Now write the full HTTPS config
+      cat > /etc/nginx/sites-available/bytegrader <<NGINX_FULL
+# ByteGrader nginx config — generated by deploy.sh
+
+server {
+    listen 80;
+    server_name ${DOMAIN} www.${DOMAIN};
+    location /.well-known/acme-challenge/ { root /var/www/html; }
+    location / { return 301 https://github.com/ShawnHymel/bytegrader; }
+}
+
+server {
+    listen 80;
+    server_name ${FULL_DOMAIN};
+    location /.well-known/acme-challenge/ { root /var/www/html; }
+    location / { return 301 https://\$server_name\$request_uri; }
+}
+
+server {
+    listen 443 ssl http2;
+    server_name ${FULL_DOMAIN};
+
+    ssl_certificate     /etc/letsencrypt/live/${FULL_DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${FULL_DOMAIN}/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+    add_header X-Frame-Options DENY;
+    add_header X-Content-Type-Options nosniff;
+    add_header Strict-Transport-Security "max-age=63072000; includeSubDomains; preload";
+
+    location / {
+$(printf '%b' "$IP_BLOCK")
+        proxy_hide_header Access-Control-Allow-Origin;
+        set \$cors_origin "";
+        if (\$http_origin ~* "^https?://(localhost|127\\.0\\.0\\.1)(:[0-9]+)?\$") {
+            set \$cors_origin \$http_origin;
+        }
+        add_header Access-Control-Allow-Origin \$cors_origin always;
+        add_header Access-Control-Allow-Headers "X-API-Key, X-Username, Content-Type" always;
+        add_header Access-Control-Allow-Methods "GET, POST, OPTIONS" always;
+
+        if (\$request_method = OPTIONS) { return 204; }
+
+        proxy_pass         http://localhost:${APP_PORT};
+        proxy_set_header   Host              \$host;
+        proxy_set_header   X-Real-IP         \$remote_addr;
+        proxy_set_header   X-Forwarded-For   \$proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto \$scheme;
+        proxy_read_timeout 300s;
+        proxy_connect_timeout 10s;
+        client_max_body_size 100M;
+    }
+}
+NGINX_FULL
+      nginx -t && systemctl reload nginx
+      success "HTTPS enabled for https://$FULL_DOMAIN"
+    fi
+  fi
+else
+  info "Skipping SSL (--skip-ssl)"
+fi
+
+# ── Done ──────────────────────────────────────────────────────────────────────
+header "Deployment Complete"
+
+LOCAL=$(curl -sf "http://localhost:${APP_PORT}/health" || echo "FAILED")
+echo ""
+echo -e "  ${GREEN}Local health:${NC}  $LOCAL"
+if [[ "$SKIP_SSL" == false ]]; then
+  REMOTE=$(curl -sf "https://${FULL_DOMAIN}/health" 2>/dev/null || echo "not yet reachable")
+  echo -e "  ${GREEN}Remote health:${NC} $REMOTE"
+fi
+echo ""
+echo -e "  ${BOLD}Endpoint:${NC}  https://${FULL_DOMAIN}"
+echo -e "  ${BOLD}Logs:${NC}      cd $APP_DIR && docker compose logs -f"
+echo -e "  ${BOLD}Update:${NC}    sudo bash update.sh"
+echo ""
+success "ByteGrader is live!"
