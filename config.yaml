@@ -2,7 +2,7 @@
 # ByteGrader Configuration
 # =============================================================================
 # 1. Edit this file
-# 2. Run: sudo bash deploy.sh
+# 2. Run: bash deploy.sh
 # All settings live here — no interactive prompts.
 # =============================================================================
 
@@ -10,11 +10,12 @@
 # Domain Settings
 # -----------------------------------------------------------------------------
 
-# Your root domain (redirects to GitHub)
-domain: bytegrader.com
+# Your root domain (e.g. bytegrader.com)
+domain: my-domain.com
 
-# Course subdomain — autograder will be at https://<subdomain>.<domain>/
-subdomain: esp32-iot
+# Course subdomain (e.g. esp-iot)
+# Autograder will be at https://<subdomain>.<domain>/
+subdomain: my-course-name
 
 # Email for Let's Encrypt SSL certificate notifications
 ssl_email: you@example.com
