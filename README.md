@@ -57,145 +57,120 @@ Log in to your domain name provider and click to manage your domain for your gra
 | A     |  www  | <YOUR_SERVER_IP> | Automatic |
 | A     | <SUBDOMAIN> | <YOUR_SERVER_IP> | Automatic |
 
-## Install Docker
+### Clone Your Assignments Repo (Optional)
 
-To start, you'll need to install Docker (from [these instructions](https://docs.docker.com/engine/install/ubuntu/)). As root, install dependencies and add Docker's official GPG key:
-
+If you are using a private assignments repo rather than the default graders bundled with ByteGrader, clone it now. You will need a [GitHub Personal Access Token (PAT)](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens) with read access to the repo:
 ```sh
-apt-get update
-apt-get install ca-certificates curl
-install -m 0755 -d /etc/apt/keyrings
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
-chmod a+r /etc/apt/keyrings/docker.asc
+git clone https://<PAT>@github.com/<your-org>/<your-assignments-repo> /home/bytegrader/my-assignments
 ```
 
-Add the Docker repository to the Apt sources:
+The PAT is only needed for this one-time clone. Once the repo is on the server, it is not needed again unless you redeploy.
+
+### Configure
+
+Edit the [config.yaml](./config.yaml) file:
 
 ```sh
-echo \
-  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
-  $(. /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}") stable" | \
-  tee /etc/apt/sources.list.d/docker.list > /dev/null
-apt-get update
+nano config.yaml
+```
+ 
+At minimum you must set:
+
+ * **domain** - Your root domain (e.g. `bytegrader.com`)
+ * **subdomain** - Your course subdomain (e.g. `esp32-iot`)
+ * **ssl_email** - Your email for SSL certificate notifications
+ * **graders_local_path** - Path to your graders directory (see below)
+ * **grader_images** - Map of assignment names to Docker image tags
+
+For `graders_local_path`, use one of the following depending on your setup:
+
+```yaml
+# Use the default graders bundled with ByteGrader:
+graders_local_path: /home/bytegrader/bytegrader/graders
+
+# Use a private assignments repo you cloned above:
+graders_local_path: /home/bytegrader/my-assignments/graders
 ```
 
-Install Docker:
+Optionally configure security settings:
+
+```yaml
+# Restrict access to specific IP addresses:
+ip_whitelist: ["203.0.113.5", "192.168.1.0/24"]
+
+# Require an API key for all requests:
+api_keys: ["your-secret-key-here"]
+```
+
+### Install
+
+Run the install script as *root*:
 
 ```sh
-sudo apt-get install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+bash install.sh
 ```
 
-## Server Configuration
+This will:
+ 1. Install system dependencies and Docker
+ 2. Create the `bytegrader` system user
+ 3. Build grader Docker images
+ 4. Build and start the ByteGrader API container
+ 5. Configure nginx
+ 6. Obtain and configure SSL certificates (requires DNS to be propagated)
 
-we'll create a new *bytegrader* user (so that we don't run everything as root), clone the repository, and configure the server. You should only need to do this once, and it should be done as *root*.
-
-Make sure that you are SSH'd into your server (as *root*). Create the *bytegrader* user (this name is important, as the setup scripts assume you have such a user and home directory).
-
-```sh
-adduser --disabled-password --gecos "" bytegrader
-usermod -aG docker bytegrader
-```
-
-You can optionally copy the SSH keys so you can remotely log into the server as either root or bytegrader.
-
-```sh
-mkdir -p /home/bytegrader/.ssh
-cp /root/.ssh/authorized_keys /home/bytegrader/.ssh/
-chown -R bytegrader:bytegrader /home/bytegrader/.ssh
-chmod 700 /home/bytegrader/.ssh
-chmod 600 /home/bytegrader/.ssh/authorized_keys
-```
-
-If you don't want to log in directly as *bytegrader*, you can log in as root and switch to *bytegrader*. 
-
-```sh
-su - bytegrader
-```
-
-### Server Setup
-
-Make sure you are in the **bytegrader** user, and then clone the repo:
-
-```sh
-cd /home/bytegrader/
-git clone https://github.com/ShawnHymel/bytegrader.git
-cd bytegrader/
-```
-
-Feel free to check out a particular tag, version, or branch. (e.g. `git checkout v1.2`).
-
-Make sure the setup scripts are executable:
-
-```sh
-chmod +x deploy/*.sh
-```
-
-Log back in as **root** (or enter `logout` to escape out of the `su - bytegrader` shell). Then, run the server setup script as a superuser:
-
-```sh
-cd /home/bytegrader/bytegrader/
-bash deploy/setup-server.sh
-```
-
-This will walk you through the process of assigning several important environment variables that are used throughout the setup process:
-
- * **Main domain** - The main domain name you purchased earlier (e.g. bytegrader.com). Note that for now, this will redirect to `github.com/ShawnHymel/bytegrader`, as we only need the subdomain for our autograder endpoints.
- * **Course subdomain** - The server will set up a subdomain for your course's autograder endpoints. For example, `esp32-iot` will mean the full URL of the autograder is `https://esp32-iot.bytegrader.com`.
- * **Email** - Your email address for SSL certificate notifications (from [certbot](https://certbot.eff.org/))
- * **IP whitelist** - List of IP addresses (comma separated) that are allowed to connect to the server. Leave empty to allow all connections. Ideally, this should be the IPv4 and IPv6 addresses of your course site (LMS) and your personal, public IP address (so you can test from home/office).
- * **API key** - Secret key (password) used to authenticate clients connecting to the server. Ideally, only your LMS site should have the same key.
-
-If *openssh-server* pops up asking you what to do with the existing *sshd_config* file, accept the default (keep the local version).
-
-### Deploy ByteGrader Server App
-
-Log in as the **bytegrader** user (e.g. `su - bytegrader`), make an *app/* directory, and run the deploy app. The *deploy.sh* script will copy the relevant files from the repo to the *app/* directory.
-
-```sh
-cd /home/bytegrader/
-mkdir -p app/
-cd bytegrader/
-bash deploy/deploy.sh /home/bytegrader/app/
-```
-
-Once that runs, you can check to make sure that the grader container is reachable locally:
-
-```sh
-curl http://localhost:8080/health
-```
-
-This should show `{"status":"ok"}`.
-
-Then, you can check to make sure that you can lookup your subdomain's IP address with:
-
-```sh
-nslookup <SUBDOMAIN>.<DOMAIN>
-```
-
-You can't make any requests yet, as you need to enable SSL.
-
-### Enable SSL
-
-Even though our app is running, we need to generate SSL certificates and get them signed (through Let's Encrypt). It also sets up *certbot* to renew certificates automatically. We needed to wait until now to run *setup-ssl.sh*, as we only just set up our domain and subdomain with the *deploy.sh* script.
-
-Switch to the **root** user (`logout` or re-login via SSH) and run the *setup-ssl.sh* script:
-
-```sh
-cd /home/bytegrader/bytegrader
-bash deploy/setup-ssl.sh
-```
-
-Hopefully, this completes successfully. You can check with:
+Verify the server is running:
 
 ```sh
 curl https://<SUBDOMAIN>.<DOMAIN>/health
 ```
 
-This should show `{"status":"ok"}`.
+> *Note*: this script will create a user in Linux with the name set by `bytegrader_user` in *config.yaml*. The user is created without a password, so the only way to log in as that user is to switch to it from root (e.g. `su - bytegrader`).
 
 ### Test With Remote Client
 
-With the server running, you should be able to send test submissions to the `/submit` endpoint from one of your clients on the approved IP address whitelist. See [Test Grading](#test-grading) for more information.
+With the server running, you should be able to send test submissions to the `/submit` endpoint from one of your clients on the approved IP address whitelist.
+
+```sh
+curl -X POST \
+  -H "X-API-Key: <API_KEY>" \
+  -H "X-Username: test-user" \
+  -F "file=@test/make-c-add/submission.zip" \
+  "https://<SUBDOMAIN>.<DOMAIN>/submit?assignment=make-c-add"
+```
+
+You should receive a "File submitted for grading" JSON message back from the server. Copy the *job_id* and check the status of the grading job:
+
+```sh
+curl -H "X-API-Key: <API_KEY>" \
+  -H "X-Username: test-user" \
+  "https://<SUBDOMAIN>.<DOMAIN>/status/<JOB_ID>"
+```
+
+## Updating
+
+If you have a live server and want to do an update, you should consider doing a [blue-green deployment](https://en.wikipedia.org/wiki/Blue%E2%80%93green_deployment), which should help minimize downtime. With this strategy, instantiate a new server while your existing server is still running. Install ByteGrader and your course-specific grader(s) on the new server, test that the new server still works, switch the DNS entry to point to the new server, then bring down the old server. 
+
+### Blue-Green Deployment
+
+On the new server, clone this repo and your grader repo. Set the options in [config.yaml](/config.yaml). Then, run the install script (as *root*) but skip *nginx* (which requires DNS):
+
+```sh
+bash install.sh --skip-nginx
+```
+
+Test the new server (you can also try sending a known-good assignment for it to grade):
+
+```sh
+curl http://<NEW_IP>:8080/health
+```
+
+Switch your DNS *A Record* to the new server IP address. Wait for propagation, then run (as *root*):
+
+```sh
+bash install.sh --skip-build
+```
+
+Your new server should be now accepting submissions (via HTTPS), and you can bring down the old server.
 
 ## API Endpoints
 
@@ -324,8 +299,6 @@ Release notes are kept in [CHANGELOG.md](./CHANGELOG.md).
 
  * Add full integration test with make/C grader example
  * Make multi-stage Docker build for adding in environments (e.g. Arduino, ESP-IDF)
- * Build API for hosting site and LearnDash
- * Map volume workspace to */workspace* instead of */
 
 ## License
 

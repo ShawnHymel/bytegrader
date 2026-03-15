@@ -35,10 +35,22 @@ ip_whitelist: []
 api_keys: []
 
 # -----------------------------------------------------------------------------
-# Grader Images
+# Graders
 # -----------------------------------------------------------------------------
+
+# Path to your graders directory on the server.
+# This can be:
+#   - The graders/ folder in the main bytegrader repo (for default graders)
+#   - The graders/ folder in your private assignments repo
+# If cloning a private repo, git a personal access token (PAT) first. Then, 
+# clone your assignments repo before running install.sh:
+#   git clone https://<PAT>@github.com/you/your-assignments /home/bytegrader/my-assignments
+graders_local_path: /home/bytegrader/bytegrader/graders
+
 # Maps assignment names (used as ?assignment=<name>) to Docker image tags.
-# Images must be pre-built and available on the server.
+# These must match the assignments defined in your graders registry.yaml.
+# Example:
+#   my-assignment: bytegrader-my-assignment:latest
 grader_images:
   make-c-add: bytegrader-make-c-add:latest
   test-stub:  bytegrader-test-stub:latest
