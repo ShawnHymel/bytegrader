@@ -146,7 +146,7 @@ curl -H "X-API-Key: <API_KEY>" \
   "https://<SUBDOMAIN>.<DOMAIN>/status/<JOB_ID>"
 ```
 
-## Updating
+## Update Process
 
 If you have a live server and want to do an update, you should consider doing a [blue-green deployment](https://en.wikipedia.org/wiki/Blue%E2%80%93green_deployment), which should help minimize downtime. With this strategy, instantiate a new server while your existing server is still running. Install ByteGrader and your course-specific grader(s) on the new server, test that the new server still works, switch the DNS entry to point to the new server, then bring down the old server. 
 
@@ -179,25 +179,6 @@ See [the API endpoints page](/doc/api-endpoints.md) for a full list of endpoints
 ## Developing a Grader
 
 See [Creating a Grader](doc/creating-a-grader.md) for more information.
-
-## Update Process
-
-Once the server is running, you can update ByteGrader (with minimal downtime) by logging into the server as the *bytegrader* user, stopping the container, updating the repository, and then calling the *deploy.sh* script again. Don't forget to give the script the location of your *app* directory!
-
-```sh
-ssh bytegrader@<SUBDOMAIN>.<DOMAIN>
-cd ~/app
-docker compose down
-cd ~/bytegrader
-git pull
-./deploy/deploy.sh ~/app
-```
-
-Verify that the server is running with:
-
-```sh
-curl http://localhost:8080/health
-```
 
 ## Test Grading
 

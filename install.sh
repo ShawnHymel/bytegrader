@@ -140,12 +140,19 @@ else
 fi
 usermod -aG docker "$BG_USER"
 
+# Update permissions for the bytegrader user
 if [[ -f /root/.ssh/authorized_keys ]]; then
   mkdir -p "/home/$BG_USER/.ssh"
   cp /root/.ssh/authorized_keys "/home/$BG_USER/.ssh/"
   chown -R "$BG_USER:$BG_USER" "/home/$BG_USER/.ssh"
   chmod 700 "/home/$BG_USER/.ssh"
   chmod 600 "/home/$BG_USER/.ssh/authorized_keys"
+fi
+
+# Fix ownership of graders path if it already exists (e.g. cloned as root)
+if [[ -d "$GRADERS_PATH" ]]; then
+  chown -R "$BG_USER:$BG_USER" "$GRADERS_PATH"
+  success "Fixed ownership of $GRADERS_PATH -> $BG_USER"
 fi
 
 # ── Step 4: Environment file ──────────────────────────────────────────────────
