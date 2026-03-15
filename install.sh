@@ -38,6 +38,13 @@ for arg in "$@"; do
   esac
 done
 
+# Accept all connections for testing then switch to loopback only with nginx
+if [[ "$SKIP_NGINX" == true ]]; then
+  BIND_ADDRESS="0.0.0.0"
+else
+  BIND_ADDRESS="127.0.0.1"
+fi
+
 [[ $EUID -ne 0 ]] && die "Run as root: sudo bash install.sh"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -220,6 +227,8 @@ if [[ "$SKIP_BUILD" == false ]]; then
 
   # Copy and process docker-compose.yaml
   export COURSE_SUBDOMAIN="$SUBDOMAIN"
+  export APP_PORT
+  export BIND_ADDRESS
   export BYTEGRADER_REQUIRE_API_KEY=$([[ -n "$API_KEYS_CSV" ]] && echo "true" || echo "false")
   export BYTEGRADER_VALID_API_KEYS="$API_KEYS_CSV"
   export BYTEGRADER_ALLOWED_IPS=$(IFS=,; echo "${IP_WHITELIST[*]:-}")
@@ -277,7 +286,6 @@ if [[ "$SKIP_BUILD" == false ]]; then
   success "App container built and started"
 
   # Patch docker-compose.yaml for Blue/Green support
-  sed -i 's|"127.0.0.1:8080:8080"|"127.0.0.1:${APP_PORT:-8080}:8080"|g' "$APP_DIR/docker-compose.yaml"
   sed -i 's|container_name: bytegrader-.*|container_name: ${CONTAINER_NAME:-bytegrader-app}|g' "$APP_DIR/docker-compose.yaml"
   success "Patched docker-compose.yaml for Blue/Green support"
 

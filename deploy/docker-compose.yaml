@@ -12,7 +12,7 @@ services:
       "
     
     ports:
-      - "127.0.0.1:8080:8080"
+      - "${BIND_ADDRESS}:${APP_PORT}:8080"
       
     volumes:
       - ./uploads:/tmp/uploads
