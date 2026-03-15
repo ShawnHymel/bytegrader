@@ -13,7 +13,7 @@
 # Your root domain (e.g. bytegrader.com)
 domain: my-domain.com
 
-# Course subdomain (e.g. esp-iot)
+# Course subdomain (e.g. esp32-iot)
 # Autograder will be at https://<subdomain>.<domain>/
 subdomain: my-course-name
 
@@ -42,19 +42,12 @@ api_keys: []
 # This can be:
 #   - The graders/ folder in the main bytegrader repo (for default graders)
 #   - The graders/ folder in your private assignments repo
-# If cloning a private repo, git a personal access token (PAT) first. Then, 
-# clone your assignments repo before running install.sh:
-#   git clone https://<PAT>@github.com/you/your-assignments /home/bytegrader/my-assignments
-graders_local_path: /home/bytegrader/bytegrader/graders
-
-# Maps assignment names (used as ?assignment=<name>) to Docker image tags.
-# These must match the assignments defined in your graders registry.yaml.
-# Example:
-#   my-assignment: bytegrader-my-assignment:latest
-grader_images:
-  make-c-add: bytegrader-make-c-add:latest
-  test-stub:  bytegrader-test-stub:latest
-  test-delay: bytegrader-test-delay:latest
+# If cloning a private repo, get a personal access token (PAT) first. Then,
+# clone your assignments repo as root before running install.sh:
+#   git clone https://<PAT>@github.com/you/your-assignments /root/my-assignments
+# install.sh will automatically fix ownership of the cloned repo.
+# Note that your custom grader(s) must have registry.yaml and build.sh files
+graders_local_path: /root/my-assignments/graders
 
 # -----------------------------------------------------------------------------
 # Server Settings

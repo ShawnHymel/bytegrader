@@ -6,7 +6,7 @@ services:
     # Entrypoint hack to change permissions of the volume mount
     command: >
       sh -c "
-        chown -R 1000:988 /workspace &&
+        chown -R ${DOCKER_USER_ID}:${DOCKER_GROUP_ID} /workspace &&
         chmod -R 755 /workspace &&
         exec ./bytegrader-api
       "
