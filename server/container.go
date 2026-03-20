@@ -54,7 +54,6 @@ func (q *JobQueue) runContainerGrader(job *Job, tempDir string) *JobResult {
             Image: assignmentConfig.Image,
             WorkingDir: "/workspace",  // Simplified working directory
             Env: buildEnvironmentVariables(job.ID, assignmentConfig),
-            User: fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid()),
         },
         &container.HostConfig{
             Mounts: []mount.Mount{

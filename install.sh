@@ -253,7 +253,7 @@ if [[ "$SKIP_BUILD" == false ]]; then
 
   # Create runtime directories
   mkdir -p "$APP_DIR/uploads" "$APP_DIR/logs" "$APP_DIR/workspace"
-  chown -R "$DOCKER_USER_ID:$DOCKER_GROUP_ID" "$APP_DIR/workspace" || true
+  chmod 777 "$APP_DIR/workspace"
   success "Created runtime directories"
 
   # Build grader images
@@ -275,7 +275,7 @@ if [[ "$SKIP_BUILD" == false ]]; then
   # Fix volume permissions
   docker volume create bytegrader-workspace 2>/dev/null || true
   docker run --rm -v bytegrader-workspace:/workspace alpine sh -c \
-    "chown -R $DOCKER_USER_ID:$DOCKER_GROUP_ID /workspace && chmod -R 755 /workspace"
+    "chmod -R 777 /workspace"
 
   # Copy health check script
   cp "$SCRIPT_DIR/deploy/health-check.sh" "$APP_DIR/"
