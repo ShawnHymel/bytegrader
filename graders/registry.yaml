@@ -4,6 +4,8 @@ assignments:
     description: "Simple test grader that returns constant results"
     enabled: true
     timeout_minutes: 5
+    grader_uid: 1000
+    grader_gid: 1000
     resources:
       memory_mb: 256
       cpu_limit: 0.25
@@ -14,6 +16,8 @@ assignments:
     description: "Test grader that simulates a delay and returns constant results"
     enabled: true
     timeout_minutes: 5
+    grader_uid: 1000
+    grader_gid: 1000
     resources:
       memory_mb: 256
       cpu_limit: 0.25
@@ -24,6 +28,8 @@ assignments:
     description: "C program that adds two float numbers using make"
     enabled: true
     timeout_minutes: 10
+    grader_uid: 1000
+    grader_gid: 1000
     resources:
       memory_mb: 256
       cpu_limit: 0.25
