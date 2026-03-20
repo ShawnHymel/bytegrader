@@ -14,8 +14,8 @@ type AssignmentConfig struct {
     Description     string `yaml:"description"`
     TimeoutMinutes  int    `yaml:"timeout_minutes"`
     Enabled         bool   `yaml:"enabled"`
-    GraderUID       int    `yaml:"grader_uid,omitempty"`
-    GraderGID       int    `yaml:"grader_gid,omitempty"`
+    GraderUID       int    `yaml:"grader_uid,omitempty"` // Used by build scripts, not by server
+    GraderGID       int    `yaml:"grader_gid,omitempty"` // Used by build scripts, not by server
     Environment     map[string]string `yaml:"environment,omitempty"`
     Resources       ResourceConfig `yaml:"resources,omitempty"`
 }
