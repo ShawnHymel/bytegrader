@@ -7,6 +7,7 @@ import (
     "io"
     "os"
     "path/filepath"
+    "strconv"
     "strings"
     "time"
 
@@ -14,6 +15,105 @@ import (
     "github.com/docker/docker/api/types/mount"
     "github.com/docker/docker/client"
 )
+
+// Get UID and GID from image configuration
+func getImageUserIDs(ctx context.Context, cli *client.Client, imageName string) (int, int, error) {
+
+    // Inspect the image to get the user
+    imageInfo, err := cli.ImageInspect(ctx, imageName)
+    if err != nil {
+        return 0, 0, fmt.Errorf("failed to inspect image: %v", err)
+    }
+
+    imageUser := imageInfo.Config.User
+    fmt.Printf("🔍 Image user: '%s'\n", imageUser)
+
+    // If no user specified, default to root (0:0)
+    if imageUser == "" {
+        fmt.Printf("⚠️  No USER specified in image, using root (0:0)\n")
+        return 0, 0, nil
+    }
+
+    // Parse "uid:gid" format (e.g. "1000:1000")
+    if strings.Contains(imageUser, ":") {
+        parts := strings.Split(imageUser, ":")
+        uid, err := strconv.Atoi(parts[0])
+        if err != nil {
+            return 0, 0, fmt.Errorf("failed to parse UID from '%s': %v", imageUser, err)
+        }
+        gid, err := strconv.Atoi(parts[1])
+        if err != nil {
+            return 0, 0, fmt.Errorf("failed to parse GID from '%s': %v", imageUser, err)
+        }
+        return uid, gid, nil
+    }
+
+    // If just a username (e.g. "grader"), run a quick container to resolve UID/GID
+    fmt.Printf("🔍 Resolving UID/GID for user '%s'...\n", imageUser)
+    result, err := cli.ContainerCreate(ctx,
+        &container.Config{
+            Image: imageName,
+            Cmd:   []string{"/bin/sh", "-c", "id -u && id -g"},
+            User:  imageUser,
+        },
+        nil, nil, nil, "",
+    )
+    if err != nil {
+        return 0, 0, fmt.Errorf("failed to create id lookup container: %v", err)
+    }
+    defer cli.ContainerRemove(ctx, result.ID, container.RemoveOptions{Force: true})
+
+    if err := cli.ContainerStart(ctx, result.ID, container.StartOptions{}); err != nil {
+        return 0, 0, fmt.Errorf("failed to start id lookup container: %v", err)
+    }
+
+    statusCh, errCh := cli.ContainerWait(ctx, result.ID, container.WaitConditionNotRunning)
+    select {
+    case err := <-errCh:
+        return 0, 0, fmt.Errorf("error waiting for id lookup container: %v", err)
+    case <-statusCh:
+    }
+
+    logs, err := cli.ContainerLogs(ctx, result.ID, container.LogsOptions{ShowStdout: true})
+    if err != nil {
+        return 0, 0, fmt.Errorf("failed to get id lookup container logs: %v", err)
+    }
+    defer logs.Close()
+
+    logData, err := io.ReadAll(logs)
+    if err != nil {
+        return 0, 0, fmt.Errorf("failed to read id lookup logs: %v", err)
+    }
+
+    // Parse UID and GID from output
+    // Docker log lines have an 8-byte header, strip them
+    lines := strings.Split(strings.TrimSpace(string(logData)), "\n")
+    if len(lines) < 2 {
+        return 0, 0, fmt.Errorf("unexpected id output: %s", string(logData))
+    }
+
+    // Strip 8-byte Docker log header from each line
+    uidStr := strings.TrimSpace(lines[0])
+    gidStr := strings.TrimSpace(lines[1])
+    if len(uidStr) > 8 {
+        uidStr = strings.TrimSpace(uidStr[8:])
+    }
+    if len(gidStr) > 8 {
+        gidStr = strings.TrimSpace(gidStr[8:])
+    }
+
+    uid, err := strconv.Atoi(uidStr)
+    if err != nil {
+        return 0, 0, fmt.Errorf("failed to parse UID '%s': %v", uidStr, err)
+    }
+    gid, err := strconv.Atoi(gidStr)
+    if err != nil {
+        return 0, 0, fmt.Errorf("failed to parse GID '%s': %v", gidStr, err)
+    }
+
+    fmt.Printf("✅ Resolved user '%s' to %d:%d\n", imageUser, uid, gid)
+    return uid, gid, nil
+}
 
 // Run the grading process inside a Docker container
 func (q *JobQueue) runContainerGrader(job *Job, tempDir string) *JobResult {
@@ -46,6 +146,24 @@ func (q *JobQueue) runContainerGrader(job *Job, tempDir string) *JobResult {
         return &JobResult{Error: fmt.Sprintf("Failed to create Docker client: %v", err)}
     }
     defer cli.Close()
+
+    // Get UID/GID from image and fix workspace ownership
+    uid, gid, err := getImageUserIDs(ctx, cli, assignmentConfig.Image)
+    if err != nil {
+        return &JobResult{Error: fmt.Sprintf("Failed to get image user IDs: %v", err)}
+    }
+    fmt.Printf("👤 Setting workspace ownership to %d:%d\n", uid, gid)
+
+    // Fix ownership of job workspace directories
+    submissionDir := filepath.Join(jobWorkspace, "submission")
+    resultsDir := filepath.Join(jobWorkspace, "results")
+    submissionZip := filepath.Join(submissionDir, "submission.zip")
+
+    for _, path := range []string{jobWorkspace, submissionDir, resultsDir, submissionZip} {
+        if err := os.Chown(path, uid, gid); err != nil {
+            fmt.Printf("⚠️  Failed to chown %s: %v\n", path, err)
+        }
+    }
     
     // Create grader container with volume mount and environment detection
     resp, err := cli.ContainerCreate(
