@@ -357,6 +357,10 @@ Include:
 - **Discussions**: Use GitHub Discussions for questions
 - **Examples**: Look at existing graders for implementation patterns
 
+## Releasing a New Version
+
+If you are an administrator or maintainer of the ByteGrader project, see the [release guide](doc/release.md) for accepting a PR and releasing a new version.
+
 ## Code of Conduct
 
 This project adheres to a code of conduct that ensures a welcoming environment for all contributors. Be respectful, constructive, and collaborative in all interactions.

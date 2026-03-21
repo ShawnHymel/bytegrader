@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 When making changes, add an entry to the **Unreleased** section.
 
+## [Unreleased]
+
+### Changed
+
+- Added a shared `graders` group (GID 1800) for secure cross-container file access
+- API server container now starts as root, sets workspace permissions, then drops to app user via `gosu`
+- Workspace directories are created with mode `0775` (group-writable)
+- Volume initialization sets setgid bit on `/workspace/jobs/` so new job subdirectories inherit the `graders` group
+- Removed `grader_uid`/`grader_gid` fields from registry.yaml and the `AssignmentConfig` struct (no longer needed)
+- Removed `user:` override and `no-new-privileges` from docker-compose.yaml
+- Updated the main README with information on how to use the new `install.sh` installation process
+
+### Added
+
+- `install.sh` and `config.yaml` files to allow for streamlined installation and updates
+- `deploy/entrypoint.sh`: sets up workspace group ownership and setgid bit as root, then execs the API server as the
+app user
+- `gosu` installed in API server image for clean privilege drop
+
+### Security
+
+- Grader containers no longer require world-writable (`777`) directories; write access is scoped to the `graders` group
+
 ## [0.8.4] - 2025-07-17
 
 ### Changed

@@ -59,14 +59,24 @@ Log in to your domain name provider and click to manage your domain for your gra
 
 ### Clone Your Assignments Repo (Optional)
 
-If you are using a private assignments repo rather than the default graders bundled with ByteGrader, clone it now. You will need a [GitHub Personal Access Token (PAT)](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens) with read access to the repo:
+If you are using a private assignments repo rather than the default graders bundled with ByteGrader, clone it now. You will need a [GitHub Personal Access Token (PAT)](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens). Use [this link](https://github.com/settings/personal-access-tokens/new?name=bytegrader-assignments-deploy&description=Contents:read&expires_in=7&contents=read) to start with a pre-defined PAT template. 
+
+Once you generate a PAT, use it to clone the private repository:
+
 ```sh
-git clone https://<PAT>@github.com/<your-org>/<your-assignments-repo> /home/bytegrader/my-assignments
+git clone https://<PAT>@github.com/<USERNAME>/<REPO_NAME> /root/my-assignments
 ```
 
 The PAT is only needed for this one-time clone. Once the repo is on the server, it is not needed again unless you redeploy.
 
 ### Configure
+
+Clone this repository:
+
+```sh
+git clone https://github.com/ShawnHymel/bytegrader /root/bytegrader
+cd /root/bytegrader
+```
 
 Edit the [config.yaml](./config.yaml) file:
 
@@ -86,17 +96,21 @@ For `graders_local_path`, use one of the following depending on your setup:
 
 ```yaml
 # Use the default graders bundled with ByteGrader:
-graders_local_path: /home/bytegrader/bytegrader/graders
+graders_local_path: /root/bytegrader/graders
+```
 
+```yaml
 # Use a private assignments repo you cloned above:
-graders_local_path: /home/bytegrader/my-assignments/graders
+graders_local_path: /root/my-assignments/graders
 ```
 
 Optionally configure security settings:
 
 ```yaml
 # Restrict access to specific IP addresses:
-ip_whitelist: ["203.0.113.5", "192.168.1.0/24"]
+ip_whitelist: 
+  - "203.0.113.5"
+  - "192.168.1.0/24"
 
 # Require an API key for all requests:
 api_keys: ["your-secret-key-here"]
@@ -118,13 +132,15 @@ This will:
  5. Configure nginx
  6. Obtain and configure SSL certificates (requires DNS to be propagated)
 
+> **Note**: See [below for blue/green deployment steps](#blue-green-deployment)
+
 Verify the server is running:
 
 ```sh
 curl https://<SUBDOMAIN>.<DOMAIN>/health
 ```
 
-> *Note*: this script will create a user in Linux with the name set by `bytegrader_user` in *config.yaml*. The user is created without a password, so the only way to log in as that user is to switch to it from root (e.g. `su - bytegrader`).
+> **Note**: this script will create a user in Linux with the name set by `bytegrader_user` in *config.yaml*. The user is created without a password, so the only way to log in as that user is to switch to it from root (e.g. `su - bytegrader`).
 
 ### Test With Remote Client
 
@@ -134,11 +150,11 @@ With the server running, you should be able to send test submissions to the `/su
 curl -X POST \
   -H "X-API-Key: <API_KEY>" \
   -H "X-Username: test-user" \
-  -F "file=@test/make-c-add/submission.zip" \
-  "https://<SUBDOMAIN>.<DOMAIN>/submit?assignment=make-c-add"
+  -F "file=@<PATH_TO_FILE>/submission.zip" \
+  "https://<SUBDOMAIN>.<DOMAIN>/submit?assignment=<ASSIGNMENT_NAME>"
 ```
 
-You should receive a "File submitted for grading" JSON message back from the server. Copy the *job_id* and check the status of the grading job:
+You should receive a `File submitted for grading` JSON message back from the server. Copy the *job_id* and check the status of the grading job:
 
 ```sh
 curl -H "X-API-Key: <API_KEY>" \
@@ -146,31 +162,37 @@ curl -H "X-API-Key: <API_KEY>" \
   "https://<SUBDOMAIN>.<DOMAIN>/status/<JOB_ID>"
 ```
 
+You can also [check the logs](#check-logs) on the server or remotely [check the queue](#check-the-queue).
+
 ## Update Process
 
 If you have a live server and want to do an update, you should consider doing a [blue-green deployment](https://en.wikipedia.org/wiki/Blue%E2%80%93green_deployment), which should help minimize downtime. With this strategy, instantiate a new server while your existing server is still running. Install ByteGrader and your course-specific grader(s) on the new server, test that the new server still works, switch the DNS entry to point to the new server, then bring down the old server. 
 
 ### Blue-Green Deployment
 
-On the new server, clone this repo and your grader repo. Set the options in [config.yaml](/config.yaml). Then, run the install script (as *root*) but skip *nginx* (which requires DNS):
+On the new server, clone this repo and your grader repo. Set the options in [config.yaml](./config.yaml). Then, run the install script (as *root*) but skip *nginx* (which requires DNS):
 
 ```sh
 bash install.sh --skip-nginx
 ```
 
-Test the new server (you can also try sending a known-good assignment for it to grade):
+Test the new server by first checking its health:
 
 ```sh
 curl http://<NEW_IP>:8080/health
 ```
 
-Switch your DNS *A Record* to the new server IP address. Wait for propagation, then run (as *root*):
+Then, [send a known-good assignment to the server](#test-with-remote-client) and ensures it performs the grading process correctly.
+
+Switch your [DNS A Record](#configure-dns) to the new server IP address. 
+
+Wait for propagation, then run (as *root*):
 
 ```sh
 bash install.sh --skip-build
 ```
 
-Your new server should be now accepting submissions (via HTTPS), and you can bring down the old server.
+Your new server should be now accepting submissions (via HTTPS from the client), and you can bring down the old server.
 
 ## API Endpoints
 
@@ -180,33 +202,18 @@ See [the API endpoints page](/doc/api-endpoints.md) for a full list of endpoints
 
 See [Creating a Grader](doc/creating-a-grader.md) for more information.
 
-## Test Grading
-
-From your home/office computer (assuming you've whitelisted your public IP address), you can test submitting a dummy file for grading using the *test-stub* grader (which always returns a static grade/feedback so long as it receives a valid .zip file).
-
-```sh
-curl -X POST -H "X-API-Key: <API_KEY>" -H "X-Username: test-user" -F "file=@test/make-c-add/submission.zip" https://<SUBDOMAIN>.<DOMAIN>/submit?assignment=make-c-add
-```
-
-You should receive a "File submitted for grading" JSON message back from the server. Copy the *job_id* and check the status of the grading job:
-
-```sh
-curl -H "X-API-Key: <API_KEY>" -H "X-Username: test-user" https://<SUBDOMAIN>.<DOMAIN>/status/<JOB_ID>
-```
-
-You can watch the real-time logs of the server with:
-
-```sh
-cd /home/bytegrader/app
-docker compose logs -f
-```
-
 ## Security Best Practices
 
 - Never commit API keys, passwords, or certificates
 - Use environment variables for sensitive configuration
 - Keep dependencies updated
 - Enable branch protection on main
+
+## Bugs and Contributing
+
+Found a bug? Please [file an issue](https://github.com/ShawnHymel/bytegrader/issues)!
+
+Want to add a feature? Please create a pull request (PR)! Take a look at the [contribution guide](./CONTRIBUTING.md) for how to submit a PR.
 
 ## Notes
 
@@ -279,7 +286,6 @@ Release notes are kept in [CHANGELOG.md](./CHANGELOG.md).
 ## Todo
 
  * Add full integration test with make/C grader example
- * Make multi-stage Docker build for adding in environments (e.g. Arduino, ESP-IDF)
 
 ## License
 
