@@ -39,6 +39,9 @@ services:
       - FAILED_JOB_TTL_HOURS=${BYTEGRADER_FAILED_JOB_TTL_HOURS:-24}
       - OLD_FILE_TTL_HOURS=${BYTEGRADER_OLD_FILE_TTL_HOURS:-48}
     
+    networks:
+      - bytegrader-net
+
     restart: unless-stopped
 
     healthcheck:
@@ -62,3 +65,7 @@ volumes:
   bytegrader-workspace:
     external: true
     name: bytegrader-workspace
+
+networks:
+  bytegrader-net:
+    name: bytegrader-net
