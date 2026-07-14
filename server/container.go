@@ -15,18 +15,6 @@ import (
     "github.com/docker/docker/client"
 )
 
-// Get UID and GID from assignment configuration
-// Returns uid, gid, and whether to apply chown
-func getGraderUserIDs(assignmentConfig *AssignmentConfig) (int, int, bool) {
-    if assignmentConfig.GraderUID > 0 && assignmentConfig.GraderGID > 0 {
-        fmt.Printf("👤 Using configured grader user IDs: %d:%d\n",
-            assignmentConfig.GraderUID, assignmentConfig.GraderGID)
-        return assignmentConfig.GraderUID, assignmentConfig.GraderGID, true
-    }
-    fmt.Printf("⚠️  No grader_uid/grader_gid in registry — skipping chown, container runs as root\n")
-    return 0, 0, false
-}
-
 // Run the grading process inside a Docker container
 func (q *JobQueue) runContainerGrader(job *Job, tempDir string) *JobResult {
 
@@ -35,15 +23,15 @@ func (q *JobQueue) runContainerGrader(job *Job, tempDir string) *JobResult {
     if err != nil {
         return &JobResult{Error: fmt.Sprintf("Assignment configuration error: %v", err)}
     }
-    
-    fmt.Printf("🐳 Starting container grading for assignment '%s' with image: %s\n", 
-        job.AssignmentID, 
+
+    fmt.Printf("🐳 Starting container grading for assignment '%s' with image: %s\n",
+        job.AssignmentID,
         assignmentConfig.Image,
     )
-    
+
     // Create job-specific directory in shared volume
     jobWorkspace := fmt.Sprintf("/workspace/jobs/%s", job.ID)
-    
+
     // Set up timeout context
     timeout := time.Duration(assignmentConfig.TimeoutMinutes) * time.Minute
     if timeout == 0 {
@@ -51,7 +39,7 @@ func (q *JobQueue) runContainerGrader(job *Job, tempDir string) *JobResult {
     }
     ctx, cancel := context.WithTimeout(context.Background(), timeout)
     defer cancel()
-    
+
     // Create Docker client
     cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
     if err != nil {
@@ -59,24 +47,12 @@ func (q *JobQueue) runContainerGrader(job *Job, tempDir string) *JobResult {
     }
     defer cli.Close()
 
-    // Get UID/GID from registry configuration
-    uid, gid, doChown := getGraderUserIDs(assignmentConfig)
+    // Workspace permissions are handled by the shared 'graders' group:
+    // - /workspace/jobs/ has the setgid bit, so new subdirectories inherit the group
+    // - API server and grader containers both have their users in the 'graders' group
+    // - Directories are created with mode 0775 (group-writable)
+    // No chown needed.
 
-    // Fix ownership of job workspace directories if configured
-    if doChown {
-        fmt.Printf("👤 Setting workspace ownership to %d:%d\n", uid, gid)
-        jobWorkspace := fmt.Sprintf("/workspace/jobs/%s", job.ID)
-        submissionDir := filepath.Join(jobWorkspace, "submission")
-        resultsDir := filepath.Join(jobWorkspace, "results")
-        submissionZip := filepath.Join(submissionDir, "submission.zip")
-
-        for _, path := range []string{jobWorkspace, submissionDir, resultsDir, submissionZip} {
-            if err := os.Chown(path, uid, gid); err != nil {
-                fmt.Printf("⚠️  Failed to chown %s: %v\n", path, err)
-            }
-        }
-    }
-    
     // Create grader container with volume mount and environment detection
     resp, err := cli.ContainerCreate(
         ctx, 

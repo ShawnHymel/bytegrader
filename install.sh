@@ -253,8 +253,12 @@ if [[ "$SKIP_BUILD" == false ]]; then
 
   # Create runtime directories
   mkdir -p "$APP_DIR/uploads" "$APP_DIR/logs" "$APP_DIR/workspace"
-  chmod 777 "$APP_DIR/workspace"
   success "Created runtime directories"
+
+  # Copy entrypoint script
+  cp "$SCRIPT_DIR/deploy/entrypoint.sh" "$APP_DIR/"
+  chmod +x "$APP_DIR/entrypoint.sh"
+  success "Copied entrypoint script"
 
   # Build grader images
   info "Building grader images..."
@@ -272,10 +276,15 @@ if [[ "$SKIP_BUILD" == false ]]; then
     --build-arg GROUP_ID="$DOCKER_GROUP_ID" \
     --build-arg GIT_COMMIT="$GIT_COMMIT"
 
-  # Fix volume permissions
+  # Set up shared volume with proper group permissions
+  # GID 1800 = 'graders' group shared between API server and grader containers
   docker volume create bytegrader-workspace 2>/dev/null || true
   docker run --rm -v bytegrader-workspace:/workspace alpine sh -c \
-    "chmod -R 777 /workspace"
+    "addgroup -g 1800 graders && \
+     mkdir -p /workspace/jobs && \
+     chgrp -R graders /workspace && \
+     chmod 2775 /workspace && \
+     chmod 2775 /workspace/jobs"
 
   # Copy health check script
   cp "$SCRIPT_DIR/deploy/health-check.sh" "$APP_DIR/"

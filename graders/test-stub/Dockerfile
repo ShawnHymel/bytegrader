@@ -30,8 +30,10 @@ COPY ${GRADER_DIR}/*.py /assignment/
 # Set Python path
 ENV PYTHONPATH="/grader"
 
-# Create non-root user for security
-RUN useradd -m grader && \
+# Create shared group for workspace access and non-root user for security
+ARG SHARED_GID=1800
+RUN groupadd -g ${SHARED_GID} graders && \
+    useradd -m -G graders grader && \
     chown -R grader:grader /workspace /submission /results /grader /assignment
 
 USER grader
