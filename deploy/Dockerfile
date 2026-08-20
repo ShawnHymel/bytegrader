@@ -5,7 +5,7 @@
 # --- Stage 1: Build the Go binary ---
 
 # Use a lightweight Go image for building the application
-FROM golang:1.24-alpine AS builder
+FROM golang:1.26-bookworm AS builder
 WORKDIR /app
 
 # Copy Go module files
@@ -36,6 +36,7 @@ RUN apt-get update && apt-get install -y \
         ca-certificates \
         libmagic1 \
         curl \
+        gosu \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies for graders
@@ -44,11 +45,15 @@ RUN pip install --no-cache-dir python-magic
 # Create app user with host-matching IDs
 ARG USER_ID=1000
 ARG GROUP_ID=988
+ARG SHARED_GID=1800
 
 # Create groups if they don't exist, then create user
+# - docker: for Docker socket access
+# - graders: shared group between API server and grader containers for workspace access
 RUN groupadd -f -g 999 docker \
     && groupadd -f -g ${GROUP_ID} bytegrader \
-    && useradd -u ${USER_ID} -g bytegrader -G docker -m -s /bin/sh bytegrader
+    && groupadd -f -g ${SHARED_GID} graders \
+    && useradd -u ${USER_ID} -g bytegrader -G docker,graders -m -s /bin/sh bytegrader
 
 # Create directories with correct ownership
 RUN mkdir -p /app /tmp/uploads /usr/local/bin/graders /workspace/jobs \
@@ -64,8 +69,10 @@ COPY --chown=bytegrader:bytegrader graders/ /usr/local/bin/graders/
 # Make graders executable
 RUN chmod +x /usr/local/bin/graders/*.py 2>/dev/null || true
 
-# Switch to non-root user
-USER bytegrader
+# Copy entrypoint script
+COPY entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
 WORKDIR /app
 
 EXPOSE 8080
@@ -74,4 +81,6 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8080/health || exit 1
 
+# Entrypoint sets up workspace permissions as root, then drops to bytegrader user
+ENTRYPOINT ["/app/entrypoint.sh"]
 CMD ["./bytegrader-api"]

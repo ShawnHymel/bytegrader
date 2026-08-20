@@ -102,7 +102,7 @@ func submitHandler(w http.ResponseWriter, r *http.Request) {
     resultsDir := filepath.Join(jobWorkspace, "results")
 
     fmt.Printf("📁 Creating submission directory: %s\n", submissionDir)
-    err = os.MkdirAll(submissionDir, 0755)
+    err = os.MkdirAll(submissionDir, 0775)
     if err != nil {
         fmt.Printf("❌ Failed to create submission directory: %v\n", err)
         w.WriteHeader(http.StatusInternalServerError)
@@ -112,7 +112,7 @@ func submitHandler(w http.ResponseWriter, r *http.Request) {
     fmt.Printf("✅ Created submission directory\n")
 
     fmt.Printf("📁 Creating results directory: %s\n", resultsDir)
-    err = os.MkdirAll(resultsDir, 0755)
+    err = os.MkdirAll(resultsDir, 0775)
     if err != nil {
         fmt.Printf("❌ Failed to create results directory: %v\n", err)
         w.WriteHeader(http.StatusInternalServerError)
@@ -133,7 +133,7 @@ func submitHandler(w http.ResponseWriter, r *http.Request) {
     }
 
     // Write file directly to volume workspace
-    err = os.WriteFile(filePath, fileContents, 0644)
+    err = os.WriteFile(filePath, fileContents, 0664)
     if err != nil {
         w.WriteHeader(http.StatusInternalServerError)
         json.NewEncoder(w).Encode(ErrorResponse{Error: "Unable to save file to workspace"})

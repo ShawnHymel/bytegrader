@@ -1,0 +1,63 @@
+# =============================================================================
+# ByteGrader Configuration
+# =============================================================================
+# 1. Edit this file
+# 2. Run: bash deploy.sh
+# All settings live here — no interactive prompts.
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Domain Settings
+# -----------------------------------------------------------------------------
+
+# Your root domain (e.g. bytegrader.com)
+domain: my-domain.com
+
+# Course subdomain (e.g. esp32-iot)
+# Autograder will be at https://<subdomain>.<domain>/
+subdomain: my-course-name
+
+# Email for Let's Encrypt SSL certificate notifications
+ssl_email: you@example.com
+
+# -----------------------------------------------------------------------------
+# Security
+# -----------------------------------------------------------------------------
+
+# IP whitelist: IPv4/IPv6 addresses or CIDR blocks allowed to connect.
+# Leave empty ([]) to allow all IPs.
+# Example: ["203.0.113.5", "192.168.1.0/24"]
+ip_whitelist: []
+
+# API keys for client authentication.
+# Leave empty ([]) to disable API key requirement.
+# Example: ["my-secret-key"]
+api_keys: []
+
+# -----------------------------------------------------------------------------
+# Graders
+# -----------------------------------------------------------------------------
+
+# Path to your graders directory on the server.
+# This can be:
+#   - The graders/ folder in the main bytegrader repo (for default graders)
+#   - The graders/ folder in your private assignments repo
+# If cloning a private repo, get a personal access token (PAT) first. Then,
+# clone your assignments repo as root before running install.sh:
+#   git clone https://<PAT>@github.com/you/your-assignments /root/my-assignments
+# install.sh will automatically fix ownership of the cloned repo.
+# Note that your custom grader(s) must have registry.yaml and build.sh files
+graders_local_path: /root/my-assignments/graders
+
+# -----------------------------------------------------------------------------
+# Server Settings
+# -----------------------------------------------------------------------------
+
+# Port the ByteGrader server listens on (inside Docker)
+app_port: 8080
+
+# Directory where deployed app files live
+app_dir: /home/bytegrader/app
+
+# System user that owns and runs ByteGrader
+bytegrader_user: bytegrader

@@ -23,15 +23,15 @@ func (q *JobQueue) runContainerGrader(job *Job, tempDir string) *JobResult {
     if err != nil {
         return &JobResult{Error: fmt.Sprintf("Assignment configuration error: %v", err)}
     }
-    
-    fmt.Printf("🐳 Starting container grading for assignment '%s' with image: %s\n", 
-        job.AssignmentID, 
+
+    fmt.Printf("🐳 Starting container grading for assignment '%s' with image: %s\n",
+        job.AssignmentID,
         assignmentConfig.Image,
     )
-    
+
     // Create job-specific directory in shared volume
     jobWorkspace := fmt.Sprintf("/workspace/jobs/%s", job.ID)
-    
+
     // Set up timeout context
     timeout := time.Duration(assignmentConfig.TimeoutMinutes) * time.Minute
     if timeout == 0 {
@@ -39,14 +39,20 @@ func (q *JobQueue) runContainerGrader(job *Job, tempDir string) *JobResult {
     }
     ctx, cancel := context.WithTimeout(context.Background(), timeout)
     defer cancel()
-    
+
     // Create Docker client
     cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
     if err != nil {
         return &JobResult{Error: fmt.Sprintf("Failed to create Docker client: %v", err)}
     }
     defer cli.Close()
-    
+
+    // Workspace permissions are handled by the shared 'graders' group:
+    // - /workspace/jobs/ has the setgid bit, so new subdirectories inherit the group
+    // - API server and grader containers both have their users in the 'graders' group
+    // - Directories are created with mode 0775 (group-writable)
+    // No chown needed.
+
     // Create grader container with volume mount and environment detection
     resp, err := cli.ContainerCreate(
         ctx, 
@@ -54,7 +60,6 @@ func (q *JobQueue) runContainerGrader(job *Job, tempDir string) *JobResult {
             Image: assignmentConfig.Image,
             WorkingDir: "/workspace",  // Simplified working directory
             Env: buildEnvironmentVariables(job.ID, assignmentConfig),
-            User: fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid()),
         },
         &container.HostConfig{
             Mounts: []mount.Mount{
